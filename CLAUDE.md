@@ -11,8 +11,8 @@ cargo build
 # Run (TUI mode, default)
 cargo run
 
-# Run (web dashboard mode, opens http://localhost:9999)
-cargo run -- --dashboard
+# Run (foreground server: ports + web dashboard at http://localhost:9999, no TUI)
+cargo run -- serve
 
 # Check without producing a binary
 cargo check
@@ -31,7 +31,7 @@ There are no automated tests currently in this project.
 
 ## Architecture
 
-This is a **mock API server** — a developer tool for defining HTTP endpoints that return canned responses. It has two UI modes (TUI and web dashboard) that share all backend infrastructure.
+This is a **mock API server** — a developer tool for defining HTTP endpoints that return canned responses. It has a terminal UI (TUI) and a web dashboard that share all backend infrastructure. The web dashboard is always served at `http://localhost:9999` when the server is running; there is no separate flag to enable it.
 
 ### Data flow
 
@@ -43,10 +43,15 @@ This is a **mock API server** — a developer tool for defining HTTP endpoints t
 
 ### Two UIs, one `AppState`
 
-`AppState` (defined in `src/main.rs`) carries the three stores, the port manager, and the broadcast sender. It is `Clone` and threaded into both subsystems:
+`AppState` (defined in `src/main.rs`) carries all stores, the port manager, and the broadcast sender. It is `Clone` and threaded into both subsystems:
 
 - **TUI** (`src/tui/`) — `ratatui` + `crossterm` terminal UI with tabs for Ports, Mocks, and Logs. The `App` struct in `src/tui/app.rs` holds all UI state. Modals handle creation/editing.
-- **Web dashboard** (`src/dashboard/`) — Axum router under `/api/v1` serving REST endpoints for ports, mocks, and logs, plus a WebSocket at `/ws/logs`. Static assets (the compiled Vue app) are embedded into the binary via `rust-embed`.
+- **Web dashboard** (`src/dashboard/`) — Axum router under `/api/v1` serving REST endpoints for ports, mocks, logs, auth, and admin. A WebSocket at `/ws/logs` streams real-time events. Static assets (the compiled Vue app) are embedded into the binary via `rust-embed`.
+
+### Auth & multi-tenancy
+
+- **JWT auth** (`src/auth/`) — login issues a short-lived JWT. All dashboard API routes are protected by the `AuthUser` extractor. `AuthUser` carries the user's claims including `is_admin` and `current_tenant_id`.
+- **Tenants** — each mock is scoped to a tenant. The mock server routes by reading the tenant slug from the first URL segment (`/{tenant}/{path}`). The `default` tenant is served without a prefix (`/{path}`). Non-admin users only see mocks for their assigned tenants.
 
 ### Frontend
 

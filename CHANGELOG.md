@@ -9,10 +9,10 @@
   `{ip}:{port}/{tenant}/{path}`. Tenants created by an admin isolate routes so different
   teams can share the same port without conflict.
 - **Default tenant shortcut** — mocks belonging to the `default` tenant are accessed
-  without a slug prefix (`{ip}:{port}/{path}`), and the dashboard displays their address
+  without a slug prefix (`{ip}:{port}/{path}`), and the web UI displays their address
   in that shorter form. The mock server falls back to the `default` tenant automatically
   when the first path segment does not match any known tenant slug.
-- **Authentication & JWT sessions** — login is required to access the dashboard.
+- **Authentication & JWT sessions** — login is required before using the web UI.
   - `POST /api/v1/auth/login` — returns a short-lived JWT on success.
   - `POST /api/v1/auth/logout` — invalidates the session token.
   - `GET  /api/v1/auth/me` — returns the current user profile and assigned tenants.
@@ -20,7 +20,7 @@
     returns a fresh token so all subsequent API calls are scoped to the new tenant.
   - `PUT  /api/v1/auth/me/default-tenant` — persists the preferred default tenant.
   - Non-admin users only see mocks belonging to their assigned tenant(s).
-- **Admin panel** — new Admin page in the dashboard (admin users only):
+- **Admin panel** — new Admin page in the web UI (admin users only):
   - **Tenants tab** — create, edit (name + enabled toggle), and delete tenants. Deletion
     is blocked when the tenant still owns mocks.
   - **Users tab** — create users (username, display name, password, admin flag, initial
@@ -38,7 +38,7 @@
     headers, and a request body textarea (shown for POST / PUT / PATCH / DELETE only).
   - **Right panel** — live response: status badge (green < 400, red ≥ 400), elapsed time,
     response headers list, and a syntax-highlighted JSON body viewer.
-  - Requests are proxied through the dashboard backend to avoid browser CORS restrictions.
+  - Requests are proxied through the server backend to avoid browser CORS restrictions.
 
 ### Fixed
 
@@ -71,11 +71,11 @@
     `{items, total, page, page_size}` envelope
   - **Total field** — field path to overwrite with the computed total count; supports
     dot-notation (e.g. `body.total`); empty = skip
-- **Address column in Mocks list** — both the web dashboard and TUI now show `IP:Port`
-  in the mock list. The dashboard column includes a copy button.
+- **Address column in Mocks list** — both the web UI and TUI now show `IP:Port`
+  in the mock list. The web UI column includes a copy button.
 - **TUI full pagination config** — the mock create/edit modal exposes all four pagination
   fields (Page param, Page size param, Data field, Total field) when Pagination is
-  enabled, matching the web dashboard.
+  enabled, matching the web UI.
 - **TUI Request Params chips display** — inactive Request Params field renders each param
   as a `[name]` chip; shows a placeholder hint when empty; `+` appends a `|` separator
   to add another entry.
@@ -96,9 +96,6 @@
 
 ### Changed
 
-- **`--dashboard` flag removed** — the web dashboard is always served at
-  `http://localhost:9999` whenever the server is running (`mock start` or `mock serve`).
-  There is no longer a separate flag to switch between TUI and dashboard modes.
 - **TUI Logs tab always follows newest** — the follow-mode toggle (`f`) has been removed.
   The log view always shows the most recent entry at the top; `↑`/`↓` navigate for
   detail selection without leaving follow mode.
@@ -109,7 +106,7 @@
 
 - **Clipboard copy on plain HTTP (Windows LAN)** — `navigator.clipboard` is unavailable
   in non-secure contexts; copy buttons now fall back to `document.execCommand('copy')`
-  so they work when the dashboard is accessed via a LAN IP on Windows.
+  so they work when accessed via a LAN IP on Windows.
 - **Empty request param values ignored** — if a configured param is sent with an empty
   value (e.g. `?name=`), it is excluded from the filter set and the full dataset is
   returned instead of filtering against an empty string.
@@ -117,7 +114,7 @@
   already exists (pre-built by CI) and uses `npm.cmd` on Windows to avoid
   `program not found` errors.
 - **Dark mode splitter gutter** — the white divider line between the mock list and detail
-  panel in the web dashboard is now styled to match the dark surface colour.
+  panel in the web UI is now styled to match the dark surface colour.
 - **Log detail visual hierarchy** — sub-section labels (`Request Headers`, `Request Body`,
   `Response Headers`, `Response Body`) are now rendered in cyan+bold to clearly separate
   them from field labels; header keys are highlighted in yellow; empty/none markers are
@@ -133,11 +130,11 @@
   reloading all port and API configuration from the database.
 - **`mock status` detail output** — shows each running port with its label and lists
   every enabled API route (method, path, name) beneath it.
-- **Live two-way sync between TUI, dashboard, and daemon** — changes made in any UI
+- **Live two-way sync between TUI, web UI, and daemon** — changes made in any UI
   are reflected in the others in near-real-time via WebSocket `state_changed` events.
   - `LogEvent` gains a `StateChanged { resource }` variant (`ports` or `mocks`)
-    broadcast after every mutating operation in `LivePortManager` and all dashboard
-    route handlers.
+    broadcast after every mutating operation in `LivePortManager` and all API route
+    handlers.
   - Vue frontend reconnects to WebSocket on app mount (not only in the Logs view)
     and re-fetches the affected Pinia store on receipt of a `state_changed` event.
 - **Port runtime state in SQLite** — `port_configs` table tracks `running` and
@@ -145,20 +142,20 @@
   (migration `0007_port_runtime_status`).
 - **Daemon-aware TUI** — when a daemon is running the TUI delegates start, stop, and
   restart operations to the daemon's HTTP API instead of trying to bind ports locally.
-- **`POST /api/v1/ports/:id/restart`** — new dashboard API endpoint for restarting a
-  port and reloading its mock snapshot from the database.
-- **Action button labels and tooltips in the web dashboard** — port action buttons now
-  show icon + text label ("Start", "Stop", "Edit", "Delete") with a hover tooltip.
+- **`POST /api/v1/ports/:id/restart`** — new API endpoint for restarting a port and
+  reloading its mock snapshot from the database.
+- **Action button labels and tooltips in the web UI** — port action buttons now show
+  icon + text label ("Start", "Stop", "Edit", "Delete") with a hover tooltip.
   PrimeVue `Tooltip` directive registered globally in `main.ts`.
 
 ### Fixed
 
-- **Startup conflict** — TUI or dashboard launched alongside a running daemon no longer
+- **Startup conflict** — TUI or web UI launched alongside a running daemon no longer
   calls `start_all_enabled`, preventing races for port ownership and duplicate-bind
   errors (`is_external_daemon_running` guard in `main.rs`).
-- **Dashboard port conflict with daemon running** — launching a second server instance
-  no longer crashes with "Address already in use"; the guard in `main.rs` detects a
-  running daemon and skips the duplicate bind.
+- **Port conflict with daemon running** — launching a second server instance no longer
+  crashes with "Address already in use"; the guard in `main.rs` detects a running daemon
+  and skips the duplicate bind.
 - **TUI mock operations with daemon running** — enabling/disabling, creating, editing,
   and deleting mocks now delegate the port restart to the daemon so changes take effect
   immediately, instead of being silently dropped by the local port manager.
@@ -204,7 +201,7 @@
 - Port conflict and validation error messages in modals
 - Cursor rendering in modal input fields
 
-#### Web dashboard
+#### Web UI
 - REST API under `/api/v1`: full CRUD for ports, mocks, and logs
 - WebSocket endpoint `/ws/logs` for real-time log streaming
 - Vue 3 + PrimeVue frontend embedded into binary via `rust-embed`
@@ -216,11 +213,11 @@
 - Pagination for log tables
 
 #### Infrastructure
-- Web dashboard always served at `http://localhost:9999` when the server is running
+- Web UI always served at `http://localhost:9999` when the server is running
 - `--port` flag to set management port (default: 9999)
 - `--db` flag to set SQLite database path (default: `apimock.db`)
 - Background daemon mode — `mock start` spawns the server as a background process (calls `setsid` on Unix to survive terminal close); `mock stop` terminates it via a PID file; `mock status` reports whether the daemon is running
-- `mock serve` subcommand — runs the server in the foreground (ports + web dashboard) without a TUI; handles `SIGTERM` and `Ctrl+C` for clean shutdown
+- `mock serve` subcommand — runs the server in the foreground (ports + web UI) without a TUI; handles `SIGTERM` and `Ctrl+C` for clean shutdown
 - PID file written alongside the database (`<db-stem>.pid`); stale files are cleaned up automatically on next `mock start`
 - GitHub Actions release workflow for Linux (musl static) and Windows binaries
 

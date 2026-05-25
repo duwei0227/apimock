@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.4.0] - 2026-05-25
+
+### Added
+
+- **Multi-tenant support** — each mock is now scoped to a tenant. The mock server routes
+  requests by reading the tenant slug from the first URL segment:
+  `{ip}:{port}/{tenant}/{path}`. Tenants created by an admin isolate routes so different
+  teams can share the same port without conflict.
+- **Default tenant shortcut** — mocks belonging to the `default` tenant are accessed
+  without a slug prefix (`{ip}:{port}/{path}`), and the dashboard displays their address
+  in that shorter form. The mock server falls back to the `default` tenant automatically
+  when the first path segment does not match any known tenant slug.
+- **Authentication & JWT sessions** — login is required to access the dashboard.
+  - `POST /api/v1/auth/login` — returns a short-lived JWT on success.
+  - `POST /api/v1/auth/logout` — invalidates the session token.
+  - `GET  /api/v1/auth/me` — returns the current user profile and assigned tenants.
+  - `POST /api/v1/auth/switch-tenant` — exchanges the active tenant in the JWT and
+    returns a fresh token so all subsequent API calls are scoped to the new tenant.
+  - `PUT  /api/v1/auth/me/default-tenant` — persists the preferred default tenant.
+  - Non-admin users only see mocks belonging to their assigned tenant(s).
+- **Admin panel** — new Admin page in the dashboard (admin users only):
+  - **Tenants tab** — create, edit (name + enabled toggle), and delete tenants. Deletion
+    is blocked when the tenant still owns mocks.
+  - **Users tab** — create users (username, display name, password, admin flag, initial
+    tenant assignments), edit display name and admin flag, disable / re-enable, reset
+    password, manage per-user tenant assignments.
+  - Admin REST endpoints under `/api/v1/admin/tenants` and `/api/v1/admin/users`.
+- **Tenant column in Mocks list** — admin users see a Tenant column showing the tenant
+  name for each mock; a Tenant filter dropdown lets admins scope the list to one tenant.
+- **Tenant filter in mock address help popover** — the address breakdown popover now
+  explains the `{tenant}` segment and its role in route isolation.
+- **Test Mock dialog** — a ▶ play button on each mock row opens a side-by-side test
+  panel:
+  - **Left panel** — request builder: read-only method badge + URL, editable query params
+    (pre-filled from the mock's configured `request_params` keys), editable request
+    headers, and a request body textarea (shown for POST / PUT / PATCH / DELETE only).
+  - **Right panel** — live response: status badge (green < 400, red ≥ 400), elapsed time,
+    response headers list, and a syntax-highlighted JSON body viewer.
+  - Requests are proxied through the dashboard backend to avoid browser CORS restrictions.
+
+### Fixed
+
+- **Default tenant remove protection** — in the User Tenants dialog the 🗑 remove button
+  is disabled for the row marked `is_default`, preventing accidental removal of a user's
+  active tenant.
+- **`SystemLog` import missing in `LogsView.vue`** — TypeScript build error caused by a
+  missing type import; corrected.
+
+---
+
 ## [0.3.0] - 2026-05-20
 
 ### Added

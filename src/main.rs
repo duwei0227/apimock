@@ -1,3 +1,4 @@
+mod auth;
 mod cli;
 mod daemon;
 mod dashboard;
@@ -15,7 +16,7 @@ use clap::Parser;
 use tokio::sync::broadcast;
 
 use crate::cli::{Cli, Command};
-use crate::db::{SqliteLogStore, SqliteMockStore, SqlitePortStore};
+use crate::db::{SqliteLogStore, SqliteMockStore, SqlitePortStore, SqliteTenantStore, SqliteUserStore};
 use crate::models::LogEvent;
 use crate::server::manager::LivePortManager;
 use crate::traits::PortManager;
@@ -48,13 +49,25 @@ async fn main() -> anyhow::Result<()> {
 
     // Open DB + run migrations.
     let conn = db::open(&cli.db).await?;
+    db::seed_admin(&conn).await?;
 
     let mock_store: Arc<dyn traits::MockStore> = Arc::new(SqliteMockStore::new(conn.clone()));
     let port_store: Arc<dyn traits::PortStore> = Arc::new(SqlitePortStore::new(conn.clone()));
     let log_store: Arc<dyn traits::LogStore> = Arc::new(SqliteLogStore::new(conn.clone()));
+    let user_store: Arc<dyn traits::UserStore> = Arc::new(SqliteUserStore::new(conn.clone()));
+    let tenant_store: Arc<dyn traits::TenantStore> = Arc::new(SqliteTenantStore::new(conn.clone()));
 
     let (log_tx, _) = broadcast::channel::<LogEvent>(1024);
     logging::init(log_store.clone(), log_tx.clone());
+
+    let jwt_secret: String = {
+        use rand::Rng;
+        rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(64)
+            .map(char::from)
+            .collect()
+    };
 
     let port_manager: Arc<dyn PortManager> = Arc::new(LivePortManager::new(
         port_store.clone(),
@@ -70,9 +83,12 @@ async fn main() -> anyhow::Result<()> {
         mock_store,
         port_store,
         log_store,
+        user_store,
+        tenant_store,
         port_manager: port_manager.clone(),
         log_tx,
         management_port: cli.port,
+        jwt_secret,
     };
 
     match cli.command {
@@ -159,8 +175,12 @@ pub struct AppState {
     pub mock_store: Arc<dyn traits::MockStore>,
     pub port_store: Arc<dyn traits::PortStore>,
     pub log_store: Arc<dyn traits::LogStore>,
+    pub user_store: Arc<dyn traits::UserStore>,
+    pub tenant_store: Arc<dyn traits::TenantStore>,
     pub port_manager: Arc<dyn PortManager>,
     pub log_tx: broadcast::Sender<LogEvent>,
     /// Management HTTP port (dashboard / API) — used by TUI to delegate to a running daemon.
     pub management_port: u16,
+    pub jwt_secret: String,
 }
+

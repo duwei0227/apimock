@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::error::Result;
-use crate::models::{HttpMethod, MockApi, PortConfig, RequestLog, SystemLog};
+use crate::models::{HttpMethod, MockApi, MockWithTenant, PortConfig, RequestLog, SystemLog, Tenant, User, UserTenant};
 
 // ---------------------------------------------------------------------------
 // PortStore
@@ -28,6 +28,7 @@ pub trait PortStore: Send + Sync {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateMockRequest {
     pub port_id: i64,
+    pub tenant_id: i64,
     pub name: String,
     pub description: String,
     pub method: HttpMethod,
@@ -69,12 +70,13 @@ pub struct UpdateMockRequest {
 
 #[async_trait]
 pub trait MockStore: Send + Sync {
-    async fn list_mocks(&self, port_id: Option<i64>) -> Result<Vec<MockApi>>;
+    async fn list_mocks(&self, port_id: Option<i64>, tenant_id: Option<i64>) -> Result<Vec<MockApi>>;
     async fn get_mock(&self, id: i64) -> Result<Option<MockApi>>;
     async fn create_mock(&self, req: CreateMockRequest) -> Result<MockApi>;
     async fn update_mock(&self, id: i64, req: UpdateMockRequest) -> Result<MockApi>;
     async fn delete_mock(&self, id: i64) -> Result<()>;
     async fn set_mock_enabled(&self, id: i64, enabled: bool) -> Result<()>;
+    async fn list_mocks_for_port_all_tenants(&self, port_id: i64) -> Result<Vec<MockWithTenant>>;
     /// Returns the best-matching enabled mock: exact method beats ANY; first match wins.
     async fn find_matching_mock(
         &self,
@@ -94,6 +96,7 @@ pub struct LogQuery {
     pub mock_api_id: Option<i64>,
     pub path: Option<String>,
     pub level: Option<String>,
+    pub tenant_id: Option<i64>,
     pub since: Option<chrono::DateTime<chrono::Utc>>,
     pub until: Option<chrono::DateTime<chrono::Utc>>,
     pub page: u32,
@@ -118,6 +121,71 @@ pub trait LogStore: Send + Sync {
     async fn append_system_log(&self, log: SystemLog) -> Result<i64>;
     async fn list_system_logs(&self, query: LogQuery) -> Result<LogPage<SystemLog>>;
     async fn clear_system_logs(&self) -> Result<()>;
+}
+
+// ---------------------------------------------------------------------------
+// TenantStore
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct CreateTenantRequest {
+    pub name: String,
+    pub slug: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateTenantRequest {
+    pub name: String,
+    pub slug: String,
+    pub enabled: bool,
+}
+
+#[async_trait]
+pub trait TenantStore: Send + Sync {
+    async fn list_tenants(&self) -> Result<Vec<Tenant>>;
+    async fn get_tenant(&self, id: i64) -> Result<Option<Tenant>>;
+    async fn get_tenant_by_slug(&self, slug: &str) -> Result<Option<Tenant>>;
+    async fn create_tenant(&self, req: CreateTenantRequest) -> Result<Tenant>;
+    async fn update_tenant(&self, id: i64, req: UpdateTenantRequest) -> Result<Tenant>;
+    async fn delete_tenant(&self, id: i64) -> Result<()>;
+    async fn has_mocks(&self, tenant_id: i64) -> Result<bool>;
+    async fn has_mocks_for_port(&self, port_id: i64) -> Result<bool>;
+}
+
+// ---------------------------------------------------------------------------
+// UserStore
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct CreateUserRequest {
+    pub username: String,
+    pub display_name: String,
+    pub password_hash: String,
+    pub is_admin: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateUserRequest {
+    pub display_name: String,
+    pub is_admin: bool,
+}
+
+#[async_trait]
+pub trait UserStore: Send + Sync {
+    async fn list_users(&self) -> Result<Vec<User>>;
+    async fn get_user(&self, id: i64) -> Result<Option<User>>;
+    async fn get_user_by_username(&self, username: &str) -> Result<Option<(User, String)>>;
+    async fn create_user(&self, req: CreateUserRequest) -> Result<User>;
+    async fn update_user(&self, id: i64, req: UpdateUserRequest) -> Result<User>;
+    async fn delete_user(&self, id: i64) -> Result<()>;
+    async fn set_user_enabled(&self, id: i64, enabled: bool) -> Result<()>;
+    async fn set_password_hash(&self, id: i64, hash: &str) -> Result<()>;
+    async fn list_user_tenants(&self, user_id: i64) -> Result<Vec<UserTenant>>;
+    async fn assign_tenant(&self, user_id: i64, tenant_id: i64) -> Result<UserTenant>;
+    async fn remove_tenant(&self, user_id: i64, tenant_id: i64) -> Result<()>;
+    async fn set_default_tenant(&self, user_id: i64, tenant_id: i64) -> Result<()>;
+    async fn user_has_tenant(&self, user_id: i64, tenant_id: i64) -> Result<bool>;
+    async fn is_empty(&self) -> Result<bool>;
 }
 
 // ---------------------------------------------------------------------------

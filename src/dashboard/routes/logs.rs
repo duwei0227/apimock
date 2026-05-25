@@ -5,6 +5,7 @@ use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
+use crate::auth::AuthUser;
 use crate::traits::LogQuery;
 use crate::AppState;
 
@@ -30,8 +31,10 @@ pub struct SystemLogQuery {
 
 pub async fn list_request_logs(
     State(state): State<AppState>,
+    AuthUser(claims): AuthUser,
     Query(q): Query<RequestLogQuery>,
 ) -> impl IntoResponse {
+    let tenant_id = if claims.is_admin { None } else { claims.current_tenant_id };
     let query = LogQuery {
         port: q.port,
         mock_api_id: q.mock_api_id,
@@ -41,6 +44,7 @@ pub async fn list_request_logs(
         page: q.page.unwrap_or(0),
         page_size: q.page_size.unwrap_or(50),
         level: None,
+        tenant_id,
     };
     match state.log_store.list_request_logs(query).await {
         Ok(page) => Json(page).into_response(),
@@ -50,6 +54,7 @@ pub async fn list_request_logs(
 
 pub async fn get_request_log(
     State(state): State<AppState>,
+    AuthUser(_): AuthUser,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     match state.log_store.get_request_log(id).await {
@@ -59,7 +64,7 @@ pub async fn get_request_log(
     }
 }
 
-pub async fn clear_request_logs(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn clear_request_logs(State(state): State<AppState>, AuthUser(_): AuthUser) -> impl IntoResponse {
     match state.log_store.clear_request_logs().await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -68,6 +73,7 @@ pub async fn clear_request_logs(State(state): State<AppState>) -> impl IntoRespo
 
 pub async fn list_system_logs(
     State(state): State<AppState>,
+    AuthUser(_): AuthUser,
     Query(q): Query<SystemLogQuery>,
 ) -> impl IntoResponse {
     let query = LogQuery {
@@ -79,6 +85,7 @@ pub async fn list_system_logs(
         port: None,
         mock_api_id: None,
         path: None,
+        tenant_id: None,
     };
     match state.log_store.list_system_logs(query).await {
         Ok(page) => Json(page).into_response(),
@@ -86,7 +93,7 @@ pub async fn list_system_logs(
     }
 }
 
-pub async fn clear_system_logs(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn clear_system_logs(State(state): State<AppState>, AuthUser(_): AuthUser) -> impl IntoResponse {
     match state.log_store.clear_system_logs().await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),

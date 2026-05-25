@@ -44,24 +44,33 @@
       class="px-5 py-3"
       style="border-top: 1px solid var(--p-surface-100)"
     >
-      <span class="text-xs text-surface-400">mock CLI — v0.1.0</span>
+      <span class="text-xs text-surface-400">mock CLI — v{{ version }}</span>
     </div>
   </aside>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '../../stores/auth'
+import { version } from '../../../package.json'
 
 const route = useRoute()
 useRouter()
+const auth = useAuthStore()
 
-const navItems = [
-  { label: 'Dashboard', to: '/',           icon: 'pi pi-home' },
-  { label: 'Ports',     to: '/ports',      icon: 'pi pi-server' },
-  { label: 'Mocks',     to: '/mocks',      icon: 'pi pi-th-large' },
-  { label: 'Logs',      to: '/logs',       icon: 'pi pi-list' },
-  { label: 'Functions', to: '/functions',  icon: 'pi pi-bolt' },
+const allNavItems = [
+  { label: 'Dashboard', to: '/',           icon: 'pi pi-home',       adminOnly: false },
+  { label: 'Ports',     to: '/ports',      icon: 'pi pi-server',     adminOnly: false },
+  { label: 'Mocks',     to: '/mocks',      icon: 'pi pi-th-large',   adminOnly: false },
+  { label: 'Logs',      to: '/logs',       icon: 'pi pi-list',       adminOnly: false },
+  { label: 'Functions', to: '/functions',  icon: 'pi pi-bolt',       adminOnly: false },
+  { label: 'Admin',     to: '/admin',      icon: 'pi pi-shield',     adminOnly: true  },
 ]
+
+const navItems = computed(() =>
+  allNavItems.filter(item => !item.adminOnly || auth.isAdmin)
+)
 
 function isActive(item: { to: string }) {
   if (item.to === '/') return route.path === '/'

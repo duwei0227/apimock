@@ -7,10 +7,20 @@
     @hide="reset"
   >
     <div class="grid grid-cols-2 gap-4 pt-2">
+      <!-- Tenant (admin only, create only) -->
+      <div v-if="auth.isAdmin && !isEdit" class="col-span-2 flex flex-col gap-1">
+        <label class="text-sm font-medium">Tenant <span class="text-red-500">*</span></label>
+        <Select v-model="form.tenant_id" :options="tenantOptions" optionLabel="label" optionValue="value" class="w-full"
+          :invalid="!!errors.tenant_id" />
+        <small v-if="errors.tenant_id" class="text-red-500">{{ errors.tenant_id }}</small>
+      </div>
+
       <!-- Port -->
       <div class="flex flex-col gap-1">
         <label class="text-sm font-medium">Port <span class="text-red-500">*</span></label>
-        <Select v-model="form.port_id" :options="portOptions" optionLabel="label" optionValue="value" class="w-full" />
+        <Select v-model="form.port_id" :options="portOptions" optionLabel="label" optionValue="value" class="w-full"
+          :invalid="!!errors.port_id" />
+        <small v-if="errors.port_id" class="text-red-500">{{ errors.port_id }}</small>
       </div>
 
       <!-- Method -->
@@ -91,7 +101,9 @@
       <!-- Response Status -->
       <div class="flex flex-col gap-1">
         <label class="text-sm font-medium">Response Status <span class="text-red-500">*</span></label>
-        <InputNumber v-model="form.response_status" :min="100" :max="599" class="w-full" />
+        <InputNumber v-model="form.response_status" :min="100" :max="599" class="w-full"
+          :invalid="!!errors.response_status" />
+        <small v-if="errors.response_status" class="text-red-500">{{ errors.response_status }}</small>
       </div>
 
       <!-- Delay -->
@@ -156,12 +168,16 @@ import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
 import Button from 'primevue/button'
-import type { MockApi, PortConfig } from '../../api/client'
+import type { MockApi, PortConfig, TenantInfo } from '../../api/client'
+import { useAuthStore } from '../../stores/auth'
+
+const auth = useAuthStore()
 
 const props = defineProps<{
   modelValue: boolean
   mock?: MockApi
   ports: PortConfig[]
+  tenants?: TenantInfo[]
 }>()
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void
@@ -192,6 +208,10 @@ const portOptions = computed(() =>
   props.ports.map(p => ({ label: `${p.port} — ${p.label || 'unnamed'}`, value: p.id }))
 )
 
+const tenantOptions = computed(() =>
+  (props.tenants ?? []).map(t => ({ label: t.name, value: t.id }))
+)
+
 interface HeaderPair { key: string; value: string }
 
 function parseBody(raw: string): { source: 'Inline' | 'File'; body: string; file: string } {
@@ -205,7 +225,12 @@ function buildForm(mock?: MockApi) {
   const { source, body, file } = parseBody(mock?.response_body ?? '')
   bodySource.value = source
   filePath.value   = file
+  const defaultTenantId = mock?.tenant_id
+    ?? auth.currentTenant?.id
+    ?? props.tenants?.[0]?.id
+    ?? 0
   return {
+    tenant_id: defaultTenantId,
     port_id: mock?.port_id ?? props.ports[0]?.id ?? 0,
     method:  mock?.method  ?? 'GET',
     path:    mock?.path    ?? '/',
@@ -245,8 +270,12 @@ function removeHeader(i: number) { form.value.response_headers_list.splice(i, 1)
 
 function validate(): boolean {
   const e: Record<string, string> = {}
-  if (!form.value.path.trim())  e.path = 'Path is required'
-  if (!form.value.name.trim())  e.name = 'Name is required'
+  if (auth.isAdmin && !isEdit.value && !form.value.tenant_id) e.tenant_id = 'Tenant is required'
+  if (!form.value.port_id)      e.port_id = 'Port is required'
+  if (!form.value.name.trim())  e.name    = 'Name is required'
+  if (!form.value.path.trim())  e.path    = 'Path is required'
+  if (!form.value.response_status || form.value.response_status < 100 || form.value.response_status > 599)
+    e.response_status = 'Status must be 100–599'
   if (bodySource.value === 'File' && !filePath.value.trim()) e.filePath = 'File path is required'
   errors.value = e
   return Object.keys(e).length === 0

@@ -7,10 +7,10 @@ export const useMocksStore = defineStore('mocks', () => {
   const loading = ref(false)
   const selectedPortId = ref<number | null>(null)
 
-  async function fetchMocks(portId?: number) {
+  async function fetchMocks(portId?: number, tenantId?: number) {
     loading.value = true
     try {
-      const { data } = await MocksApi.list(portId)
+      const { data } = await MocksApi.list(portId, tenantId)
       mocks.value = data
     } finally {
       loading.value = false

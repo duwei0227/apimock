@@ -581,6 +581,7 @@ impl App {
         let response_body = encode_body_field(&f[9], &f[10]);
         Some(CreateMockRequest {
             port_id: f[0].parse().ok()?,
+            tenant_id: 1, // TUI always uses the default tenant
             method: HttpMethod::from_str(&f[1]).unwrap_or(HttpMethod::GET),
             path: f[2].clone(),
             name: f[3].clone(),

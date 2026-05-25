@@ -10,16 +10,26 @@ use axum::response::Response;
 use tokio::sync::broadcast;
 use tokio::time::Duration;
 
-use crate::models::{HttpMethod, LogEvent, MockApi, RequestLog};
+use crate::models::{HttpMethod, LogEvent, MockWithTenant, RequestLog};
 use crate::server::template;
 use crate::traits::LogStore;
 
 #[derive(Clone)]
 pub struct MockHandlerState {
     pub port: u16,
-    pub mocks: Arc<Vec<MockApi>>,
+    pub mocks: Arc<Vec<MockWithTenant>>,
     pub log_store: Arc<dyn LogStore>,
     pub log_tx: broadcast::Sender<LogEvent>,
+}
+
+/// Splits "/acme/api/users" → ("acme", "/api/users").
+/// Splits "/acme" → ("acme", "/").
+fn split_tenant_path(path: &str) -> (&str, &str) {
+    let trimmed = path.trim_start_matches('/');
+    match trimmed.find('/') {
+        Some(idx) => (&trimmed[..idx], &trimmed[idx..]),
+        None => (trimmed, "/"),
+    }
 }
 
 pub async fn mock_fallback(
@@ -55,10 +65,11 @@ pub async fn mock_fallback(
         .and_then(|b| String::from_utf8(b.to_vec()).ok())
         .filter(|s| !s.is_empty());
 
-    // Find matching mock (exact method first, then ANY).
+    // Find matching mock (tenant slug from first path segment, exact method beats ANY).
     let matched = find_mock(&state.mocks, &method, &path);
 
-    let (response, mock_id, resp_body_str, resp_headers_map) = if let Some(mock) = matched {
+    let (response, mock_id, resp_body_str, resp_headers_map, matched_tenant_id) = if let Some(m) = matched {
+        let mock = &m.mock;
         if mock.response_delay_ms > 0 {
             tokio::time::sleep(Duration::from_millis(mock.response_delay_ms)).await;
         }
@@ -84,12 +95,14 @@ pub async fn mock_fallback(
         }
 
         let id = mock.id;
+        let tenant_id = mock.tenant_id;
         let resp_headers = mock.response_headers.clone();
         (
             builder.body(Body::from(body.clone())).unwrap_or_default(),
             Some(id),
             Some(body),
             resp_headers,
+            Some(tenant_id),
         )
     } else {
         (
@@ -100,6 +113,7 @@ pub async fn mock_fallback(
             None,
             Some(r#"{"error":"no mock matched"}"#.to_owned()),
             HashMap::new(),
+            None,
         )
     };
 
@@ -121,6 +135,7 @@ pub async fn mock_fallback(
         response_body: resp_body_str,
         duration_ms,
         client_ip: Some(client_ip),
+        tenant_id: matched_tenant_id,
         created_at: chrono::Utc::now(),
     };
 
@@ -200,7 +215,7 @@ fn extract_body_params(body: Option<&str>) -> HashMap<String, String> {
 
 fn apply_filter_and_pagination(
     body: &str,
-    mock: &MockApi,
+    mock: &crate::models::MockApi,
     method: &HttpMethod,
     query_string: Option<&str>,
     req_body: Option<&str>,
@@ -262,7 +277,7 @@ fn apply_filter_and_pagination(
     let total_field = mock.pagination_total_field.trim();
     let page_param  = mock.pagination_page_param.as_str();
     let size_param  = mock.pagination_size_param.as_str();
-    let page: usize = query_params.get(page_param).and_then(|s| s.parse::<usize>().ok()).unwrap_or(1).max(1);
+    let page: usize = query_params.get(page_param).and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
     let page_size: usize = query_params
         .get(size_param)
         .and_then(|s| s.parse::<usize>().ok())
@@ -276,7 +291,7 @@ fn apply_filter_and_pagination(
             other => return serde_json::to_string(&other).unwrap_or_else(|_| body.to_owned()),
         };
         let total = arr.len();
-        let start = (page - 1) * page_size;
+        let start = page * page_size;
         let items: Vec<serde_json::Value> = arr.into_iter().skip(start).take(page_size).collect();
         serde_json::to_string(&serde_json::json!({
             "items": items,
@@ -292,7 +307,7 @@ fn apply_filter_and_pagination(
             None => return serde_json::to_string(&filtered).unwrap_or_else(|_| body.to_owned()),
         };
         let total = arr.len();
-        let start = (page - 1) * page_size;
+        let start = page * page_size;
         let items: Vec<serde_json::Value> = arr.into_iter().skip(start).take(page_size).collect();
 
         // Replace data array in the original structure.
@@ -462,16 +477,59 @@ fn json_value_eq(val: &serde_json::Value, expected: &str) -> bool {
     }
 }
 
-/// Iterate mocks and return the best match: exact method beats ANY.
-fn find_mock<'a>(mocks: &'a [MockApi], method: &HttpMethod, path: &str) -> Option<&'a MockApi> {
+/// Iterate mocks and return the best match by tenant slug + path + method.
+/// Exact method match beats ANY.
+///
+/// Routing order:
+/// 1. Extract the first path segment as tenant slug, try to match remaining path.
+/// 2. If the extracted slug doesn't belong to any known tenant, fall back to
+///    the "default" tenant and match the **full** path (no prefix stripping).
+///    This allows requests like `/api/users` to hit default-tenant mocks at `/api/users`.
+fn find_mock<'a>(
+    mocks: &'a [MockWithTenant],
+    method: &HttpMethod,
+    path: &str,
+) -> Option<&'a MockWithTenant> {
+    let (tenant_slug, remaining) = split_tenant_path(path);
+
+    // Step 1: normal slug-based lookup.
+    let result = find_for_tenant(mocks, method, tenant_slug, remaining);
+    if result.is_some() {
+        return result;
+    }
+
+    // Step 2: if the extracted slug doesn't belong to any tenant in this snapshot,
+    // treat the whole path as belonging to the "default" tenant.
+    let slug_is_known = mocks.iter().any(|m| m.tenant_slug == tenant_slug);
+    if !slug_is_known && tenant_slug != "default" {
+        return find_for_tenant(mocks, method, "default", path);
+    }
+
+    None
+}
+
+/// Find the best-matching mock for a specific tenant slug and path.
+/// Exact method match beats ANY.
+fn find_for_tenant<'a>(
+    mocks: &'a [MockWithTenant],
+    method: &HttpMethod,
+    tenant_slug: &str,
+    path: &str,
+) -> Option<&'a MockWithTenant> {
     let exact = mocks.iter().find(|m| {
-        m.enabled && &m.method == method && path_matches(&m.path, path)
+        m.mock.enabled
+            && m.tenant_slug == tenant_slug
+            && &m.mock.method == method
+            && path_matches(&m.mock.path, path)
     });
     if exact.is_some() {
         return exact;
     }
     mocks.iter().find(|m| {
-        m.enabled && m.method == HttpMethod::ANY && path_matches(&m.path, path)
+        m.mock.enabled
+            && m.tenant_slug == tenant_slug
+            && m.mock.method == HttpMethod::ANY
+            && path_matches(&m.mock.path, path)
     })
 }
 

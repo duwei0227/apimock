@@ -3,6 +3,42 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tenant {
+    pub id: i64,
+    pub name: String,
+    pub slug: String,
+    pub enabled: bool,
+    pub mock_count: i64,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct User {
+    pub id: i64,
+    pub username: String,
+    pub display_name: String,
+    pub is_admin: bool,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserTenant {
+    pub id: i64,
+    pub user_id: i64,
+    pub tenant_id: i64,
+    pub is_default: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MockWithTenant {
+    #[serde(flatten)]
+    pub mock: MockApi,
+    pub tenant_slug: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortConfig {
     pub id: i64,
     pub port: u16,
@@ -63,6 +99,7 @@ impl std::str::FromStr for HttpMethod {
 pub struct MockApi {
     pub id: i64,
     pub port_id: i64,
+    pub tenant_id: i64,
     pub name: String,
     pub description: String,
     pub method: HttpMethod,
@@ -99,6 +136,7 @@ pub struct RequestLog {
     pub response_body: Option<String>,
     pub duration_ms: u64,
     pub client_ip: Option<String>,
+    pub tenant_id: Option<i64>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -117,6 +155,25 @@ pub struct SystemLog {
 pub enum StateResource {
     Ports,
     Mocks,
+}
+
+// ---------------------------------------------------------------------------
+// Test Mock request / response
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct TestMockPayload {
+    pub query_params: HashMap<String, String>,
+    pub headers: HashMap<String, String>,
+    pub body: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TestMockResult {
+    pub status: u16,
+    pub headers: HashMap<String, String>,
+    pub body: String,
+    pub elapsed_ms: u64,
 }
 
 /// Unified log event broadcast over the internal channel and WebSocket.

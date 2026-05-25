@@ -8,30 +8,48 @@
     </template>
     <template #end>
       <div class="flex items-center gap-2">
+        <Select
+          v-if="auth.tenants.length > 1"
+          v-model="selectedTenantId"
+          :options="auth.tenants"
+          optionLabel="name"
+          optionValue="id"
+          class="text-sm h-8"
+          style="min-width:140px"
+          @change="onTenantChange"
+        />
         <Button
           :icon="isDark ? 'pi pi-sun' : 'pi pi-moon'"
-          text
-          rounded
-          size="small"
-          severity="secondary"
+          text rounded size="small" severity="secondary"
           @click="toggleDark"
           v-tooltip.bottom="isDark ? 'Light mode' : 'Dark mode'"
         />
-        <Chip :label="`mock CLI`" icon="pi pi-bolt" class="text-xs" />
+        <Chip :label="auth.user?.display_name ?? auth.user?.username ?? 'user'" icon="pi pi-user" class="text-xs" />
+        <Button icon="pi pi-sign-out" text rounded size="small" severity="secondary" v-tooltip.bottom="'Logout'" @click="handleLogout" />
       </div>
     </template>
   </Toolbar>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, ref, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import Toolbar from 'primevue/toolbar'
 import Button from 'primevue/button'
 import Chip from 'primevue/chip'
+import Select from 'primevue/select'
+import { useAuthStore } from '../../stores/auth'
 
 const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
+
 const pageTitle = computed(() => (route.meta.title as string | undefined) ?? 'Mock APIs')
+const selectedTenantId = ref<number | null>(auth.currentTenant?.id ?? null)
+
+watch(() => auth.currentTenant, (t) => {
+  selectedTenantId.value = t?.id ?? null
+})
 
 const isDark = ref(false)
 
@@ -42,5 +60,16 @@ onMounted(() => {
 function toggleDark() {
   isDark.value = !isDark.value
   document.documentElement.classList.toggle('dark', isDark.value)
+}
+
+async function onTenantChange() {
+  if (selectedTenantId.value == null) return
+  await auth.switchTenantAction(selectedTenantId.value)
+  window.location.reload()
+}
+
+function handleLogout() {
+  auth.logout()
+  router.push('/login')
 }
 </script>

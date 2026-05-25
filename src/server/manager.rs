@@ -46,8 +46,7 @@ impl LivePortManager {
             .await?
             .ok_or_else(|| AppError::NotFound(format!("port id {}", port_id)))?;
 
-        let mocks = self.mock_store.list_mocks(Some(port_id)).await?;
-        let mocks: Vec<_> = mocks.into_iter().filter(|m| m.enabled).collect();
+        let mocks = self.mock_store.list_mocks_for_port_all_tenants(port_id).await?;
 
         let state = MockHandlerState {
             port: config.port,

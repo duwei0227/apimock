@@ -524,7 +524,7 @@ async fn daemon_post(mgmt_port: u16, path: &str) -> bool {
 }
 
 async fn refresh_mocks(app: &mut App) {
-    if let Ok(mocks) = app.state.mock_store.list_mocks(None).await {
+    if let Ok(mocks) = app.state.mock_store.list_mocks(None, None).await {
         app.mocks = mocks;
         app.mock_selected = app.mock_selected.min(app.mocks.len().saturating_sub(1));
     }

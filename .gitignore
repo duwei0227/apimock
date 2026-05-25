@@ -9,3 +9,10 @@
 # Frontend
 frontend/node_modules/
 frontend/dist/
+
+# Runtime
+*.pid
+
+# Tooling
+.superpowers/
+.claude/

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use tokio_rusqlite::Connection;
 
 use crate::error::{AppError, Result};
-use crate::models::{HttpMethod, MockApi};
+use crate::models::{HttpMethod, MockApi, MockWithTenant};
 use crate::traits::{CreateMockRequest, MockStore, UpdateMockRequest};
 
 pub struct SqliteMockStore {
@@ -67,6 +67,7 @@ fn row_to_mock(row: &rusqlite::Row<'_>) -> rusqlite::Result<MockApi> {
         pagination_size_param: row.get::<_, String>(18).unwrap_or_else(|_| "page_size".into()),
         pagination_data_field: row.get::<_, String>(19).unwrap_or_default(),
         pagination_total_field: row.get::<_, String>(20).unwrap_or_default(),
+        tenant_id: row.get::<_, i64>(21).unwrap_or(0),
         created_at,
         updated_at,
     })
@@ -77,26 +78,56 @@ const SELECT_COLS: &str =
      response_status, response_headers, response_body, response_delay_ms, \
      created_at, updated_at, enabled, \
      pagination_enabled, pagination_page_size, request_params, \
-     pagination_page_param, pagination_size_param, pagination_data_field, pagination_total_field";
+     pagination_page_param, pagination_size_param, pagination_data_field, \
+     pagination_total_field, tenant_id";
 
 #[async_trait]
 impl MockStore for SqliteMockStore {
-    async fn list_mocks(&self, port_id: Option<i64>) -> Result<Vec<MockApi>> {
+    async fn list_mocks(&self, port_id: Option<i64>, tenant_id: Option<i64>) -> Result<Vec<MockApi>> {
         self.conn
             .call(move |conn| {
-                let sql = if port_id.is_some() {
-                    format!("SELECT {} FROM mock_apis WHERE port_id = ?1 ORDER BY id", SELECT_COLS)
-                } else {
-                    format!("SELECT {} FROM mock_apis ORDER BY id", SELECT_COLS)
-                };
+                let mut wheres: Vec<String> = Vec::new();
+                if port_id.is_some() { wheres.push(format!("port_id = ?{}", wheres.len() + 1)); }
+                if tenant_id.is_some() { wheres.push(format!("tenant_id = ?{}", wheres.len() + 1)); }
+                let mut sql = format!("SELECT {} FROM mock_apis", SELECT_COLS);
+                if !wheres.is_empty() { sql.push_str(&format!(" WHERE {}", wheres.join(" AND "))); }
+                sql.push_str(" ORDER BY id");
+
                 let mut stmt = conn.prepare(&sql)?;
-                let items = if let Some(pid) = port_id {
-                    stmt.query_map(rusqlite::params![pid], row_to_mock)?
-                        .collect::<rusqlite::Result<Vec<_>>>()?
-                } else {
-                    stmt.query_map([], row_to_mock)?
-                        .collect::<rusqlite::Result<Vec<_>>>()?
-                };
+                let items = match (port_id, tenant_id) {
+                    (Some(p), Some(t)) => stmt.query_map(rusqlite::params![p, t], row_to_mock)?,
+                    (Some(p), None)    => stmt.query_map(rusqlite::params![p], row_to_mock)?,
+                    (None, Some(t))    => stmt.query_map(rusqlite::params![t], row_to_mock)?,
+                    (None, None)       => stmt.query_map([], row_to_mock)?,
+                }
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+                Ok(items)
+            })
+            .await
+            .map_err(AppError::from)
+    }
+
+    async fn list_mocks_for_port_all_tenants(&self, port_id: i64) -> Result<Vec<MockWithTenant>> {
+        self.conn
+            .call(move |conn| {
+                let query = format!(
+                    "SELECT m.id, m.port_id, m.name, m.description, m.method, m.path, \
+                     m.request_schema, m.response_status, m.response_headers, m.response_body, \
+                     m.response_delay_ms, m.created_at, m.updated_at, m.enabled, \
+                     m.pagination_enabled, m.pagination_page_size, m.request_params, \
+                     m.pagination_page_param, m.pagination_size_param, m.pagination_data_field, \
+                     m.pagination_total_field, m.tenant_id, t.slug \
+                     FROM mock_apis m JOIN tenants t ON m.tenant_id = t.id \
+                     WHERE m.port_id = ?1 AND m.enabled = 1 ORDER BY m.id"
+                );
+                let mut stmt = conn.prepare(&query)?;
+                let items = stmt
+                    .query_map(rusqlite::params![port_id], |row| {
+                        let mock = row_to_mock(row)?;
+                        let tenant_slug: String = row.get(22)?;
+                        Ok(MockWithTenant { mock, tenant_slug })
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
                 Ok(items)
             })
             .await
@@ -137,13 +168,13 @@ impl MockStore for SqliteMockStore {
             .call(move |conn| {
                 conn.execute(
                     "INSERT INTO mock_apis \
-                     (port_id, name, description, method, path, request_schema, \
+                     (port_id, tenant_id, name, description, method, path, request_schema, \
                       response_status, response_headers, response_body, response_delay_ms, \
                       pagination_enabled, pagination_page_size, request_params, \
                       pagination_page_param, pagination_size_param, pagination_data_field, pagination_total_field) \
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
                     rusqlite::params![
-                        req.port_id, req.name, req.description, method_str,
+                        req.port_id, req.tenant_id, req.name, req.description, method_str,
                         req.path, schema_json, status, headers_json,
                         req.response_body, delay,
                         pag_enabled, pag_page_size, req_params_json,

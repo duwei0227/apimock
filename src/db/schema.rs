@@ -88,6 +88,82 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0011_pagination_total_field", "
         ALTER TABLE mock_apis ADD COLUMN pagination_total_field TEXT NOT NULL DEFAULT '';
     "),
+    ("0012_tenants", "
+        CREATE TABLE IF NOT EXISTS tenants (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT    NOT NULL UNIQUE,
+            slug       TEXT    NOT NULL UNIQUE,
+            enabled    INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        );
+        INSERT OR IGNORE INTO tenants (name, slug) VALUES ('Default', 'default');
+    "),
+    ("0013_users", "
+        CREATE TABLE IF NOT EXISTS users (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            username      TEXT    NOT NULL UNIQUE,
+            display_name  TEXT    NOT NULL DEFAULT '',
+            password_hash TEXT    NOT NULL,
+            is_admin      INTEGER NOT NULL DEFAULT 0,
+            enabled       INTEGER NOT NULL DEFAULT 1,
+            created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        );
+    "),
+    ("0014_user_tenants", "
+        CREATE TABLE IF NOT EXISTS user_tenants (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            tenant_id  INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            is_default INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            UNIQUE(user_id, tenant_id)
+        );
+    "),
+    ("0015_mock_apis_tenant", "
+        CREATE TABLE mock_apis_new (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            port_id                 INTEGER NOT NULL REFERENCES port_configs(id) ON DELETE CASCADE,
+            tenant_id               INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            name                    TEXT    NOT NULL,
+            description             TEXT    NOT NULL DEFAULT '',
+            method                  TEXT    NOT NULL DEFAULT 'ANY',
+            path                    TEXT    NOT NULL,
+            request_schema          TEXT,
+            response_status         INTEGER NOT NULL DEFAULT 200,
+            response_headers        TEXT    NOT NULL DEFAULT '{}',
+            response_body           TEXT    NOT NULL DEFAULT '',
+            response_delay_ms       INTEGER NOT NULL DEFAULT 0,
+            enabled                 INTEGER NOT NULL DEFAULT 1,
+            created_at              TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            updated_at              TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            response_filter_enabled INTEGER NOT NULL DEFAULT 0,
+            pagination_enabled      INTEGER NOT NULL DEFAULT 0,
+            pagination_page_size    INTEGER NOT NULL DEFAULT 10,
+            request_params          TEXT    NOT NULL DEFAULT '{}',
+            pagination_page_param   TEXT    NOT NULL DEFAULT 'page',
+            pagination_size_param   TEXT    NOT NULL DEFAULT 'page_size',
+            pagination_data_field   TEXT    NOT NULL DEFAULT '',
+            pagination_total_field  TEXT    NOT NULL DEFAULT '',
+            UNIQUE(port_id, tenant_id, method, path)
+        );
+        INSERT INTO mock_apis_new
+            SELECT m.id, m.port_id,
+                   (SELECT id FROM tenants WHERE slug='default' LIMIT 1),
+                   m.name, m.description, m.method, m.path, m.request_schema,
+                   m.response_status, m.response_headers, m.response_body,
+                   m.response_delay_ms, m.enabled, m.created_at, m.updated_at,
+                   m.response_filter_enabled, m.pagination_enabled,
+                   m.pagination_page_size, m.request_params, m.pagination_page_param,
+                   m.pagination_size_param, m.pagination_data_field, m.pagination_total_field
+            FROM mock_apis m;
+        DROP TABLE mock_apis;
+        ALTER TABLE mock_apis_new RENAME TO mock_apis;
+        CREATE INDEX IF NOT EXISTS idx_mock_apis_port_id   ON mock_apis(port_id);
+        CREATE INDEX IF NOT EXISTS idx_mock_apis_tenant_id ON mock_apis(tenant_id);
+    "),
+    ("0016_request_logs_tenant", "
+        ALTER TABLE request_logs ADD COLUMN tenant_id INTEGER REFERENCES tenants(id);
+    "),
 ];
 
 pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {

@@ -5,18 +5,21 @@ use axum::Json;
 use serde::Deserialize;
 use std::collections::HashMap;
 
-use crate::models::{HttpMethod, LogEvent, StateResource};
+use crate::auth::AuthUser;
+use crate::models::{HttpMethod, LogEvent, StateResource, TestMockPayload, TestMockResult};
 use crate::traits::{CreateMockRequest, UpdateMockRequest};
 use crate::AppState;
 
 #[derive(Deserialize)]
 pub struct ListMocksQuery {
     pub port_id: Option<i64>,
+    pub tenant_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
 pub struct CreateMockBody {
     pub port_id: i64,
+    pub tenant_id: Option<i64>,
     pub name: String,
     pub description: Option<String>,
     pub method: HttpMethod,
@@ -63,9 +66,11 @@ pub struct SetEnabledBody {
 
 pub async fn list_mocks(
     State(state): State<AppState>,
+    AuthUser(claims): AuthUser,
     Query(q): Query<ListMocksQuery>,
 ) -> impl IntoResponse {
-    match state.mock_store.list_mocks(q.port_id).await {
+    let tenant_id = if claims.is_admin { q.tenant_id } else { claims.current_tenant_id };
+    match state.mock_store.list_mocks(q.port_id, tenant_id).await {
         Ok(mocks) => Json(mocks).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
@@ -73,10 +78,19 @@ pub async fn list_mocks(
 
 pub async fn create_mock(
     State(state): State<AppState>,
+    AuthUser(claims): AuthUser,
     Json(body): Json<CreateMockBody>,
 ) -> impl IntoResponse {
+    let tenant_id = body.tenant_id
+        .or(claims.current_tenant_id)
+        .ok_or(())
+        .unwrap_or_else(|_| 0);
+    if tenant_id == 0 {
+        return (StatusCode::BAD_REQUEST, "no active tenant").into_response();
+    }
     let req = CreateMockRequest {
         port_id: body.port_id,
+        tenant_id,
         name: body.name,
         description: body.description.unwrap_or_default(),
         method: body.method,
@@ -106,6 +120,7 @@ pub async fn create_mock(
 
 pub async fn get_mock(
     State(state): State<AppState>,
+    AuthUser(_): AuthUser,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     match state.mock_store.get_mock(id).await {
@@ -117,6 +132,7 @@ pub async fn get_mock(
 
 pub async fn update_mock(
     State(state): State<AppState>,
+    AuthUser(_): AuthUser,
     Path(id): Path<i64>,
     Json(body): Json<UpdateMockBody>,
 ) -> impl IntoResponse {
@@ -151,6 +167,7 @@ pub async fn update_mock(
 
 pub async fn delete_mock(
     State(state): State<AppState>,
+    AuthUser(_): AuthUser,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     // Fetch port_id before deletion so we can restart the server.
@@ -176,6 +193,7 @@ pub async fn delete_mock(
 
 pub async fn set_mock_enabled(
     State(state): State<AppState>,
+    AuthUser(_): AuthUser,
     Path(id): Path<i64>,
     Json(body): Json<SetEnabledBody>,
 ) -> impl IntoResponse {
@@ -197,4 +215,94 @@ pub async fn set_mock_enabled(
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
+}
+
+pub async fn test_mock(
+    State(state): State<AppState>,
+    AuthUser(_): AuthUser,
+    Path(id): Path<i64>,
+    Json(payload): Json<TestMockPayload>,
+) -> impl IntoResponse {
+    // 1. Look up mock
+    let mock = match state.mock_store.get_mock(id).await {
+        Ok(Some(m)) => m,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+
+    // 2. Look up port number
+    let port_cfg = match state.port_store.get_port(mock.port_id).await {
+        Ok(Some(p)) => p,
+        Ok(None) => return (StatusCode::BAD_GATEWAY, "port not found").into_response(),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+
+    // 3. Look up tenant slug
+    let slug = match state.tenant_store.get_tenant(mock.tenant_id).await {
+        Ok(Some(t)) => t.slug,
+        Ok(None) => return (StatusCode::BAD_GATEWAY, "tenant not found").into_response(),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+
+    // 4. Build target URL.
+    //    "default" tenant is served without a slug prefix: ip:port/path
+    let path = mock.path.trim_start_matches('/');
+    let url = if slug == "default" {
+        format!("http://127.0.0.1:{}/{}", port_cfg.port, path)
+    } else {
+        format!("http://127.0.0.1:{}/{}/{}", port_cfg.port, slug, path)
+    };
+
+    // 5. Map HttpMethod → reqwest::Method (ANY defaults to GET)
+    let method = match mock.method {
+        HttpMethod::GET     => reqwest::Method::GET,
+        HttpMethod::POST    => reqwest::Method::POST,
+        HttpMethod::PUT     => reqwest::Method::PUT,
+        HttpMethod::PATCH   => reqwest::Method::PATCH,
+        HttpMethod::DELETE  => reqwest::Method::DELETE,
+        HttpMethod::HEAD    => reqwest::Method::HEAD,
+        HttpMethod::OPTIONS => reqwest::Method::OPTIONS,
+        HttpMethod::ANY     => reqwest::Method::GET,
+    };
+
+    let client = reqwest::Client::new();
+    let mut req = client.request(method, &url);
+
+    // Query params
+    if !payload.query_params.is_empty() {
+        req = req.query(&payload.query_params);
+    }
+
+    // Request headers
+    for (k, v) in &payload.headers {
+        if let (Ok(name), Ok(val)) = (
+            reqwest::header::HeaderName::from_bytes(k.as_bytes()),
+            reqwest::header::HeaderValue::from_str(v),
+        ) {
+            req = req.header(name, val);
+        }
+    }
+
+    // Body
+    if let Some(body) = payload.body {
+        req = req.body(body);
+    }
+
+    // 6. Fire and collect response
+    let start = std::time::Instant::now();
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(e) => return (StatusCode::BAD_GATEWAY, e.to_string()).into_response(),
+    };
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+
+    let status = resp.status().as_u16();
+    let headers: HashMap<String, String> = resp
+        .headers()
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_owned()))
+        .collect();
+    let body = resp.text().await.unwrap_or_default();
+
+    Json(TestMockResult { status, headers, body, elapsed_ms }).into_response()
 }

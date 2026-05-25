@@ -1,7 +1,11 @@
 <template>
   <div class="space-y-4">
     <div class="flex items-center justify-between">
-      <h2 class="text-xl font-semibold">Logs</h2>
+      <div class="flex items-center gap-3">
+        <h2 class="text-xl font-semibold">Logs</h2>
+        <Chip v-if="auth.currentTenant" :label="auth.currentTenant.name" icon="pi pi-tag" class="text-xs" />
+        <span v-else-if="auth.isAdmin" class="text-xs text-surface-400 italic">All tenants</span>
+      </div>
       <div class="flex items-center gap-2">
         <Button
           :label="logsStore.liveEnabled ? 'Disconnect Live' : 'Connect Live'"
@@ -42,7 +46,7 @@
     <Tabs v-model:value="activeTab">
       <TabList>
         <Tab value="0">Requests</Tab>
-        <Tab value="1">System</Tab>
+        <Tab v-if="auth.isAdmin" value="1">System</Tab>
       </TabList>
       <TabPanels>
         <TabPanel value="0">
@@ -175,6 +179,7 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Badge from 'primevue/badge'
 import Button from 'primevue/button'
+import Chip from 'primevue/chip'
 import Dialog from 'primevue/dialog'
 import Tabs from 'primevue/tabs'
 import Tab from 'primevue/tab'
@@ -186,11 +191,13 @@ import Select from 'primevue/select'
 import { useLogsStore } from '../stores/logs'
 import { usePortsStore } from '../stores/ports'
 import { useMocksStore } from '../stores/mocks'
-import type { RequestLog } from '../api/client'
+import { useAuthStore } from '../stores/auth'
+import type { RequestLog, SystemLog } from '../api/client'
 
 const logsStore = useLogsStore()
 const portsStore = usePortsStore()
 const mocksStore = useMocksStore()
+const auth = useAuthStore()
 const activeTab = ref('0')
 
 const filterPort = ref<number | null>(null)
@@ -231,14 +238,19 @@ const displayRequests = computed(() => {
   const live = logsStore.liveEvents
     .filter(e => e.type === 'request')
     .map(e => (e as { type: 'request'; request: RequestLog }).request)
-  return [...live, ...logsStore.requestPage.items]
+    .filter(r => auth.isAdmin || r.tenant_id === auth.currentTenant?.id)
+  const liveIds = new Set(live.map(r => r.id))
+  const pageItems = logsStore.requestPage.items.filter(r => !liveIds.has(r.id))
+  return [...live, ...pageItems]
 })
 
 const displaySystem = computed(() => {
   const live = logsStore.liveEvents
     .filter(e => e.type === 'system')
-    .map(e => (e as { type: 'system'; system: unknown }).system)
-  return [...live, ...logsStore.systemPage.items]
+    .map(e => (e as { type: 'system'; system: SystemLog }).system)
+  const liveIds = new Set(live.map(r => r.id))
+  const pageItems = logsStore.systemPage.items.filter(r => !liveIds.has(r.id))
+  return [...live, ...pageItems]
 })
 
 function onRowClick(e: { data: RequestLog }) {
@@ -273,8 +285,8 @@ function toggleLive() {
 }
 
 async function clearCurrent() {
-  if (activeTab.value === '0') await logsStore.clearRequestLogs()
-  else await logsStore.clearSystemLogs()
+  if (activeTab.value === '1' && auth.isAdmin) await logsStore.clearSystemLogs()
+  else await logsStore.clearRequestLogs()
 }
 
 async function onRequestPage(e: { page: number; rows: number }) {

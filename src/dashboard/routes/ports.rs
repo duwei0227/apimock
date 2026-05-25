@@ -4,6 +4,7 @@ use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
+use crate::auth::{AdminUser, AuthUser};
 use crate::AppState;
 use crate::models::{LogEvent, StateResource};
 
@@ -24,7 +25,7 @@ struct PortStatusResponse {
     running: bool,
 }
 
-pub async fn list_ports(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn list_ports(State(state): State<AppState>, AuthUser(_): AuthUser) -> impl IntoResponse {
     match state.port_store.list_ports().await {
         Ok(ports) => Json(ports).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -33,6 +34,7 @@ pub async fn list_ports(State(state): State<AppState>) -> impl IntoResponse {
 
 pub async fn create_port(
     State(state): State<AppState>,
+    AdminUser(_): AdminUser,
     Json(body): Json<CreatePortBody>,
 ) -> impl IntoResponse {
     let label = body.label.unwrap_or_default();
@@ -47,6 +49,7 @@ pub async fn create_port(
 
 pub async fn get_port(
     State(state): State<AppState>,
+    AuthUser(_): AuthUser,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     match state.port_store.get_port(id).await {
@@ -58,6 +61,7 @@ pub async fn get_port(
 
 pub async fn update_port(
     State(state): State<AppState>,
+    AdminUser(_): AdminUser,
     Path(id): Path<i64>,
     Json(body): Json<UpdatePortBody>,
 ) -> impl IntoResponse {
@@ -72,9 +76,20 @@ pub async fn update_port(
 
 pub async fn delete_port(
     State(state): State<AppState>,
+    AdminUser(_): AdminUser,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
-    // Stop the server first if running.
+    match state.tenant_store.has_mocks_for_port(id).await {
+        Ok(true) => {
+            return (
+                StatusCode::CONFLICT,
+                "port has mock APIs across tenants; remove them first",
+            )
+                .into_response()
+        }
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Ok(false) => {}
+    }
     let _ = state.port_manager.stop_port(id).await;
     match state.port_store.delete_port(id).await {
         Ok(()) => {
@@ -87,6 +102,7 @@ pub async fn delete_port(
 
 pub async fn start_port(
     State(state): State<AppState>,
+    AdminUser(_): AdminUser,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     match state.port_manager.start_port(id).await {
@@ -100,6 +116,7 @@ pub async fn start_port(
 
 pub async fn stop_port(
     State(state): State<AppState>,
+    AdminUser(_): AdminUser,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     match state.port_manager.stop_port(id).await {
@@ -113,6 +130,7 @@ pub async fn stop_port(
 
 pub async fn restart_port(
     State(state): State<AppState>,
+    AdminUser(_): AdminUser,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     match state.port_manager.restart_port(id).await {
@@ -126,6 +144,7 @@ pub async fn restart_port(
 
 pub async fn port_status(
     State(state): State<AppState>,
+    AuthUser(_): AuthUser,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     let running = state.port_manager.is_running(id).await;

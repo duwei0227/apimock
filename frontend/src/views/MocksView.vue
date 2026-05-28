@@ -24,7 +24,7 @@
           class="w-48"
           @change="reload"
         />
-        <Button label="New Mock" icon="pi pi-plus" @click="openCreate" />
+        <Button label="New Mock" icon="pi pi-plus" :disabled="!canCreateMock" @click="openCreate" />
       </div>
     </div>
 
@@ -93,16 +93,20 @@
           </Column>
           <Column header="Status" style="width:80px">
             <template #body="{ data }">
-              <ToggleSwitch :modelValue="data.enabled" @update:modelValue="v => mocksStore.toggleEnabled(data.id, v)" />
+              <ToggleSwitch
+                :modelValue="data.enabled"
+                :disabled="!canEditMock"
+                @update:modelValue="v => toggleMockEnabled(data.id, v)"
+              />
             </template>
           </Column>
           <Column header="" style="width:136px">
             <template #body="{ data }">
               <div class="flex gap-1">
-                <Button icon="pi pi-play" size="small" text rounded title="Test" class="text-green-500 hover:text-green-600" @click.stop="openTest(data)" />
-                <Button icon="pi pi-copy" size="small" text rounded title="Duplicate" @click.stop="duplicateMock(data)" />
-                <Button icon="pi pi-pencil" size="small" text rounded @click.stop="openEdit(data)" />
-                <Button icon="pi pi-trash" severity="danger" size="small" text rounded @click.stop="confirmDelete(data)" />
+                <Button icon="pi pi-play" size="small" text rounded title="Test" class="text-green-500 hover:text-green-600" :disabled="!canTestMock" @click.stop="openTest(data)" />
+                <Button icon="pi pi-copy" size="small" text rounded title="Duplicate" :disabled="!canCreateMock" @click.stop="duplicateMock(data)" />
+                <Button icon="pi pi-pencil" size="small" text rounded :disabled="!canEditMock" @click.stop="openEdit(data)" />
+                <Button icon="pi pi-trash" severity="danger" size="small" text rounded :disabled="!canDeleteMock" @click.stop="confirmDelete(data)" />
               </div>
             </template>
           </Column>
@@ -228,6 +232,16 @@ const portMap = computed(() =>
   Object.fromEntries(portsStore.ports.map(p => [p.id, p.port]))
 )
 
+const mockPermissions = computed(() => auth.currentMockPermissions)
+const canCreateMock = computed(() => mockPermissions.value.can_create_mock)
+const canEditMock = computed(() => mockPermissions.value.can_edit_mock)
+const canDeleteMock = computed(() => mockPermissions.value.can_delete_mock)
+const canTestMock = computed(() => mockPermissions.value.can_test_mock)
+
+function denyPermission() {
+  toast.add({ severity: 'warn', summary: 'Permission denied', detail: 'Contact your administrator for mock permissions.', life: 3000 })
+}
+
 function fullUrl(mock: MockApi & { tenant_slug?: string }) {
   const port = portMap.value[mock.port_id] ?? mock.port_id
   const slug = mock.tenant_slug
@@ -268,21 +282,37 @@ function closeDetail() {
 }
 
 function openCreate() {
+  if (!canCreateMock.value) {
+    denyPermission()
+    return
+  }
   editingMock.value = undefined
   dialogVisible.value = true
 }
 
 function openEdit(mock: MockApi) {
+  if (!canEditMock.value) {
+    denyPermission()
+    return
+  }
   editingMock.value = mock
   dialogVisible.value = true
 }
 
 function openTest(mock: MockApi) {
+  if (!canTestMock.value) {
+    denyPermission()
+    return
+  }
   testingMock.value = mock
   testDialogVisible.value = true
 }
 
 function confirmDelete(mock: MockApi) {
+  if (!canDeleteMock.value) {
+    denyPermission()
+    return
+  }
   confirm.require({
     message: `Delete mock "${mock.name}"?`,
     header: 'Confirm',
@@ -299,6 +329,10 @@ function confirmDelete(mock: MockApi) {
 }
 
 function duplicateMock(mock: MockApi) {
+  if (!canCreateMock.value) {
+    denyPermission()
+    return
+  }
   const usedPaths = new Set(
     mocksStore.mocks
       .filter(m => m.port_id === mock.port_id && m.method === mock.method)
@@ -318,6 +352,14 @@ function duplicateMock(mock: MockApi) {
   dialogVisible.value = true
 }
 
+async function toggleMockEnabled(id: number, enabled: boolean) {
+  if (!canEditMock.value) {
+    denyPermission()
+    return
+  }
+  await mocksStore.toggleEnabled(id, enabled)
+}
+
 function copyFullUrl(mock: MockApi & { tenant_slug?: string }) {
   const url = fullUrl(mock)
   copyText(url)
@@ -327,8 +369,16 @@ function copyFullUrl(mock: MockApi & { tenant_slug?: string }) {
 async function onSave(form: Partial<MockApi>) {
   try {
     if (editingMock.value?.id) {
+      if (!canEditMock.value) {
+        denyPermission()
+        return
+      }
       await mocksStore.updateMock(editingMock.value.id, form)
     } else {
+      if (!canCreateMock.value) {
+        denyPermission()
+        return
+      }
       await mocksStore.createMock(form)
     }
     toast.add({ severity: 'success', summary: 'Saved', life: 2000 })

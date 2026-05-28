@@ -28,6 +28,10 @@ pub struct UserTenant {
     pub user_id: i64,
     pub tenant_id: i64,
     pub is_default: bool,
+    pub can_create_mock: bool,
+    pub can_edit_mock: bool,
+    pub can_delete_mock: bool,
+    pub can_test_mock: bool,
     pub created_at: DateTime<Utc>,
 }
 

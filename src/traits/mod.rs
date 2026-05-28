@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::error::Result;
-use crate::models::{HttpMethod, MockApi, MockWithTenant, PortConfig, RequestLog, SystemLog, Tenant, User, UserTenant};
+use crate::models::{
+    HttpMethod, MockApi, MockWithTenant, PortConfig, RequestLog, SystemLog, Tenant, User,
+    UserTenant,
+};
 
 // ---------------------------------------------------------------------------
 // PortStore
@@ -70,7 +73,11 @@ pub struct UpdateMockRequest {
 
 #[async_trait]
 pub trait MockStore: Send + Sync {
-    async fn list_mocks(&self, port_id: Option<i64>, tenant_id: Option<i64>) -> Result<Vec<MockApi>>;
+    async fn list_mocks(
+        &self,
+        port_id: Option<i64>,
+        tenant_id: Option<i64>,
+    ) -> Result<Vec<MockApi>>;
     async fn get_mock(&self, id: i64) -> Result<Option<MockApi>>;
     async fn create_mock(&self, req: CreateMockRequest) -> Result<MockApi>;
     async fn update_mock(&self, id: i64, req: UpdateMockRequest) -> Result<MockApi>;
@@ -170,6 +177,25 @@ pub struct UpdateUserRequest {
     pub is_admin: bool,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct MockPermissionSet {
+    pub can_create_mock: bool,
+    pub can_edit_mock: bool,
+    pub can_delete_mock: bool,
+    pub can_test_mock: bool,
+}
+
+impl Default for MockPermissionSet {
+    fn default() -> Self {
+        Self {
+            can_create_mock: true,
+            can_edit_mock: true,
+            can_delete_mock: true,
+            can_test_mock: true,
+        }
+    }
+}
+
 #[async_trait]
 pub trait UserStore: Send + Sync {
     async fn list_users(&self) -> Result<Vec<User>>;
@@ -181,7 +207,12 @@ pub trait UserStore: Send + Sync {
     async fn set_user_enabled(&self, id: i64, enabled: bool) -> Result<()>;
     async fn set_password_hash(&self, id: i64, hash: &str) -> Result<()>;
     async fn list_user_tenants(&self, user_id: i64) -> Result<Vec<UserTenant>>;
-    async fn assign_tenant(&self, user_id: i64, tenant_id: i64) -> Result<UserTenant>;
+    async fn assign_tenant(
+        &self,
+        user_id: i64,
+        tenant_id: i64,
+        permissions: MockPermissionSet,
+    ) -> Result<UserTenant>;
     async fn remove_tenant(&self, user_id: i64, tenant_id: i64) -> Result<()>;
     async fn set_default_tenant(&self, user_id: i64, tenant_id: i64) -> Result<()>;
     async fn user_has_tenant(&self, user_id: i64, tenant_id: i64) -> Result<bool>;

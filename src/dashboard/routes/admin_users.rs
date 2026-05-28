@@ -5,7 +5,7 @@ use axum::Json;
 use serde::Deserialize;
 
 use crate::auth::{hash_password, AdminUser};
-use crate::traits::{CreateUserRequest, UpdateUserRequest};
+use crate::traits::{CreateUserRequest, MockPermissionSet, UpdateUserRequest};
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -30,6 +30,10 @@ pub struct ResetPasswordBody {
 #[derive(Deserialize)]
 pub struct AssignTenantBody {
     pub tenant_id: i64,
+    pub can_create_mock: Option<bool>,
+    pub can_edit_mock: Option<bool>,
+    pub can_delete_mock: Option<bool>,
+    pub can_test_mock: Option<bool>,
 }
 
 pub async fn list_users(
@@ -81,7 +85,10 @@ pub async fn update_user(
     Path(id): Path<i64>,
     Json(body): Json<UpdateUserBody>,
 ) -> impl IntoResponse {
-    let req = UpdateUserRequest { display_name: body.display_name, is_admin: body.is_admin };
+    let req = UpdateUserRequest {
+        display_name: body.display_name,
+        is_admin: body.is_admin,
+    };
     match state.user_store.update_user(id, req).await {
         Ok(u) => Json(u).into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
@@ -143,7 +150,18 @@ pub async fn assign_tenant(
     Path(user_id): Path<i64>,
     Json(body): Json<AssignTenantBody>,
 ) -> impl IntoResponse {
-    match state.user_store.assign_tenant(user_id, body.tenant_id).await {
+    let defaults = MockPermissionSet::default();
+    let permissions = MockPermissionSet {
+        can_create_mock: body.can_create_mock.unwrap_or(defaults.can_create_mock),
+        can_edit_mock: body.can_edit_mock.unwrap_or(defaults.can_edit_mock),
+        can_delete_mock: body.can_delete_mock.unwrap_or(defaults.can_delete_mock),
+        can_test_mock: body.can_test_mock.unwrap_or(defaults.can_test_mock),
+    };
+    match state
+        .user_store
+        .assign_tenant(user_id, body.tenant_id, permissions)
+        .await
+    {
         Ok(ut) => (StatusCode::CREATED, Json(ut)).into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }

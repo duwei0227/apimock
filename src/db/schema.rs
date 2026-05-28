@@ -164,6 +164,12 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0016_request_logs_tenant", "
         ALTER TABLE request_logs ADD COLUMN tenant_id INTEGER REFERENCES tenants(id);
     "),
+    ("0017_user_tenant_mock_permissions", "
+        ALTER TABLE user_tenants ADD COLUMN can_create_mock INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE user_tenants ADD COLUMN can_edit_mock   INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE user_tenants ADD COLUMN can_delete_mock INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE user_tenants ADD COLUMN can_test_mock   INTEGER NOT NULL DEFAULT 1;
+    "),
 ];
 
 pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {

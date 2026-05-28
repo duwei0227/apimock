@@ -4,7 +4,7 @@ use tokio_rusqlite::Connection;
 
 use crate::error::{AppError, Result};
 use crate::models::{User, UserTenant};
-use crate::traits::{CreateUserRequest, UpdateUserRequest, UserStore};
+use crate::traits::{CreateUserRequest, MockPermissionSet, UpdateUserRequest, UserStore};
 
 pub struct SqliteUserStore {
     conn: Connection,
@@ -35,7 +35,7 @@ fn row_to_user(row: &rusqlite::Row<'_>) -> rusqlite::Result<User> {
 
 fn row_to_user_tenant(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserTenant> {
     let created_at = row
-        .get::<_, String>(4)
+        .get::<_, String>(8)
         .ok()
         .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
         .map(|dt| dt.with_timezone(&chrono::Utc))
@@ -45,9 +45,16 @@ fn row_to_user_tenant(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserTenant> {
         user_id: row.get(1)?,
         tenant_id: row.get(2)?,
         is_default: row.get::<_, i64>(3)? != 0,
+        can_create_mock: row.get::<_, i64>(4)? != 0,
+        can_edit_mock: row.get::<_, i64>(5)? != 0,
+        can_delete_mock: row.get::<_, i64>(6)? != 0,
+        can_test_mock: row.get::<_, i64>(7)? != 0,
         created_at,
     })
 }
+
+const USER_TENANT_COLS: &str = "id, user_id, tenant_id, is_default, \
+    can_create_mock, can_edit_mock, can_delete_mock, can_test_mock, created_at";
 
 #[async_trait]
 impl UserStore for SqliteUserStore {
@@ -190,7 +197,8 @@ impl UserStore for SqliteUserStore {
         self.conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, user_id, tenant_id, is_default, created_at \
+                    "SELECT id, user_id, tenant_id, is_default, \
+                     can_create_mock, can_edit_mock, can_delete_mock, can_test_mock, created_at \
                      FROM user_tenants WHERE user_id = ?1",
                 )?;
                 let items = stmt
@@ -202,17 +210,37 @@ impl UserStore for SqliteUserStore {
             .map_err(AppError::from)
     }
 
-    async fn assign_tenant(&self, user_id: i64, tenant_id: i64) -> Result<UserTenant> {
+    async fn assign_tenant(
+        &self,
+        user_id: i64,
+        tenant_id: i64,
+        permissions: MockPermissionSet,
+    ) -> Result<UserTenant> {
         self.conn
             .call(move |conn| {
                 conn.execute(
-                    "INSERT OR IGNORE INTO user_tenants (user_id, tenant_id) VALUES (?1, ?2)",
-                    rusqlite::params![user_id, tenant_id],
+                    "INSERT INTO user_tenants \
+                     (user_id, tenant_id, can_create_mock, can_edit_mock, can_delete_mock, can_test_mock) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+                     ON CONFLICT(user_id, tenant_id) DO UPDATE SET \
+                       can_create_mock = excluded.can_create_mock, \
+                       can_edit_mock = excluded.can_edit_mock, \
+                       can_delete_mock = excluded.can_delete_mock, \
+                       can_test_mock = excluded.can_test_mock",
+                    rusqlite::params![
+                        user_id,
+                        tenant_id,
+                        permissions.can_create_mock as i64,
+                        permissions.can_edit_mock as i64,
+                        permissions.can_delete_mock as i64,
+                        permissions.can_test_mock as i64,
+                    ],
                 )?;
-                let mut stmt = conn.prepare(
-                    "SELECT id, user_id, tenant_id, is_default, created_at \
-                     FROM user_tenants WHERE user_id = ?1 AND tenant_id = ?2",
-                )?;
+                let sql = format!(
+                    "SELECT {} FROM user_tenants WHERE user_id = ?1 AND tenant_id = ?2",
+                    USER_TENANT_COLS
+                );
+                let mut stmt = conn.prepare(&sql)?;
                 let item = stmt
                     .query_map(rusqlite::params![user_id, tenant_id], row_to_user_tenant)?
                     .next()

@@ -109,19 +109,36 @@ export interface UserTenant {
   user_id: number
   tenant_id: number
   is_default: boolean
+  can_create_mock: boolean
+  can_edit_mock: boolean
+  can_delete_mock: boolean
+  can_test_mock: boolean
   created_at: string
+}
+
+export interface MockPermissions {
+  can_create_mock: boolean
+  can_edit_mock: boolean
+  can_delete_mock: boolean
+  can_test_mock: boolean
+}
+
+export interface AssignTenantPayload extends MockPermissions {
+  tenant_id: number
 }
 
 export interface LoginResponse {
   token: string
   user: UserInfo
   tenants: TenantInfo[]
+  user_tenants: UserTenant[]
   current_tenant: TenantInfo | null
 }
 
 export interface MeResponse {
   user: UserInfo
   tenants: TenantInfo[]
+  user_tenants: UserTenant[]
   current_tenant: TenantInfo | null
 }
 
@@ -246,8 +263,10 @@ export const adminResetPassword = (id: number, password: string): Promise<void> 
 export const adminListUserTenants = (userId: number): Promise<UserTenant[]> =>
   http.get(`/admin/users/${userId}/tenants`).then(r => r.data)
 
-export const adminAssignTenant = (userId: number, tenant_id: number): Promise<UserTenant> =>
-  http.post(`/admin/users/${userId}/tenants`, { tenant_id }).then(r => r.data)
+export const adminAssignTenant = (userId: number, data: number | AssignTenantPayload): Promise<UserTenant> => {
+  const payload = typeof data === 'number' ? { tenant_id: data } : data
+  return http.post(`/admin/users/${userId}/tenants`, payload).then(r => r.data)
+}
 
 export const adminRemoveTenant = (userId: number, tenantId: number): Promise<void> =>
   http.delete(`/admin/users/${userId}/tenants/${tenantId}`).then(() => undefined)

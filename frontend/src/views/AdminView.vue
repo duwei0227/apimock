@@ -106,7 +106,7 @@
     </Dialog>
 
     <!-- ===== User Dialog ===== -->
-    <Dialog v-model:visible="userDialogVisible" :header="editingUser ? 'Edit User' : 'New User'" modal :style="{ width: '28rem' }">
+    <Dialog v-model:visible="userDialogVisible" :header="editingUser ? 'Edit User' : 'New User'" modal :style="{ width: editingUser ? '28rem' : '42rem' }">
       <div class="flex flex-col gap-3 pt-2">
         <div v-if="!editingUser" class="flex flex-col gap-1">
           <label class="text-sm font-medium">Username</label>
@@ -122,15 +122,46 @@
         </div>
         <div v-if="!editingUser" class="flex flex-col gap-1">
           <label class="text-sm font-medium">Tenants</label>
-          <MultiSelect
-            v-model="userForm.tenant_ids"
-            :options="tenants"
+          <Select
+            v-model="newUserTenantId"
+            :options="newUserAssignableTenants"
             optionLabel="name"
             optionValue="id"
-            placeholder="Select tenants (optional)"
-            display="chip"
+            placeholder="Select tenant"
             class="w-full"
+            @change="addNewUserTenantSelection"
           />
+          <small class="text-surface-400">Default tenant cannot be assigned to new users.</small>
+          <DataTable v-if="newUserTenantAssignments.length" :value="newUserTenantAssignments" size="small" stripedRows>
+            <Column header="Tenant">
+              <template #body="{ data }">{{ tenantNameById(data.tenant_id) }}</template>
+            </Column>
+            <Column header="Create" style="width:88px">
+              <template #body="{ data }">
+                <ToggleSwitch v-model="data.can_create_mock" />
+              </template>
+            </Column>
+            <Column header="Edit" style="width:88px">
+              <template #body="{ data }">
+                <ToggleSwitch v-model="data.can_edit_mock" />
+              </template>
+            </Column>
+            <Column header="Delete" style="width:88px">
+              <template #body="{ data }">
+                <ToggleSwitch v-model="data.can_delete_mock" />
+              </template>
+            </Column>
+            <Column header="Test" style="width:88px">
+              <template #body="{ data }">
+                <ToggleSwitch v-model="data.can_test_mock" />
+              </template>
+            </Column>
+            <Column header="" style="width:64px">
+              <template #body="{ data }">
+                <Button icon="pi pi-trash" severity="danger" size="small" text rounded @click="removeNewUserTenant(data.tenant_id)" />
+              </template>
+            </Column>
+          </DataTable>
         </div>
         <div class="flex items-center gap-2">
           <ToggleSwitch v-model="userForm.is_admin" />
@@ -139,7 +170,7 @@
       </div>
       <template #footer>
         <Button label="Cancel" text @click="userDialogVisible = false" />
-        <Button label="Save" @click="saveUser" />
+        <Button label="Save" :disabled="!canSaveUser" @click="saveUser" />
       </template>
     </Dialog>
 
@@ -156,7 +187,7 @@
     </Dialog>
 
     <!-- ===== User Tenants Dialog ===== -->
-    <Dialog v-model:visible="userTenantsVisible" :header="`Tenants for ${userTenantsTarget?.username}`" modal :style="{ width: '32rem' }">
+    <Dialog v-model:visible="userTenantsVisible" :header="`Tenants for ${userTenantsTarget?.username}`" modal :style="{ width: '46rem' }">
       <div class="flex flex-col gap-3 pt-2">
         <DataTable :value="userTenantList" size="small" stripedRows>
           <Column header="Tenant">
@@ -165,6 +196,26 @@
           <Column header="Default" style="width:80px">
             <template #body="{ data }">
               <Badge v-if="data.is_default" value="default" severity="success" />
+            </template>
+          </Column>
+          <Column header="Create" style="width:88px">
+            <template #body="{ data }">
+              <ToggleSwitch :modelValue="data.can_create_mock" @update:modelValue="v => updateUserTenantPermission(data, 'can_create_mock', v)" />
+            </template>
+          </Column>
+          <Column header="Edit" style="width:88px">
+            <template #body="{ data }">
+              <ToggleSwitch :modelValue="data.can_edit_mock" @update:modelValue="v => updateUserTenantPermission(data, 'can_edit_mock', v)" />
+            </template>
+          </Column>
+          <Column header="Delete" style="width:88px">
+            <template #body="{ data }">
+              <ToggleSwitch :modelValue="data.can_delete_mock" @update:modelValue="v => updateUserTenantPermission(data, 'can_delete_mock', v)" />
+            </template>
+          </Column>
+          <Column header="Test" style="width:88px">
+            <template #body="{ data }">
+              <ToggleSwitch :modelValue="data.can_test_mock" @update:modelValue="v => updateUserTenantPermission(data, 'can_test_mock', v)" />
             </template>
           </Column>
           <Column header="" style="width:80px">
@@ -193,6 +244,24 @@
           />
           <Button label="Add" icon="pi pi-plus" @click="doAssignTenant" :disabled="!assignTenantId" />
         </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-lg border border-surface-200 dark:border-surface-700 p-3">
+          <label class="flex items-center justify-between gap-2 text-sm">
+            <span>Create mock</span>
+            <ToggleSwitch v-model="assignPermissions.can_create_mock" />
+          </label>
+          <label class="flex items-center justify-between gap-2 text-sm">
+            <span>Edit mock</span>
+            <ToggleSwitch v-model="assignPermissions.can_edit_mock" />
+          </label>
+          <label class="flex items-center justify-between gap-2 text-sm">
+            <span>Delete mock</span>
+            <ToggleSwitch v-model="assignPermissions.can_delete_mock" />
+          </label>
+          <label class="flex items-center justify-between gap-2 text-sm">
+            <span>Test mock</span>
+            <ToggleSwitch v-model="assignPermissions.can_test_mock" />
+          </label>
+        </div>
       </div>
     </Dialog>
   </div>
@@ -209,7 +278,6 @@ import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import ToggleSwitch from 'primevue/toggleswitch'
 import Select from 'primevue/select'
-import MultiSelect from 'primevue/multiselect'
 import Tabs from 'primevue/tabs'
 import Tab from 'primevue/tab'
 import TabList from 'primevue/tablist'
@@ -222,7 +290,7 @@ import {
   adminListUsers, adminCreateUser, adminUpdateUser, adminDeleteUser,
   adminDisableUser, adminEnableUser, adminResetPassword,
   adminListUserTenants, adminAssignTenant, adminRemoveTenant,
-  type TenantInfo, type UserInfo, type UserTenant,
+  type MockPermissions, type TenantInfo, type UserInfo, type UserTenant,
 } from '../api/client'
 
 const confirm = useConfirm()
@@ -299,7 +367,10 @@ const users = ref<UserInfo[]>([])
 const usersLoading = ref(false)
 const userDialogVisible = ref(false)
 const editingUser = ref<UserInfo | null>(null)
-const userForm = ref({ username: '', display_name: '', password: '', is_admin: false, tenant_ids: [] as number[] })
+const userForm = ref({ username: '', display_name: '', password: '', is_admin: false })
+type UserTenantDraft = MockPermissions & { tenant_id: number }
+const newUserTenantId = ref<number | null>(null)
+const newUserTenantAssignments = ref<UserTenantDraft[]>([])
 
 async function loadUsers() {
   usersLoading.value = true
@@ -308,23 +379,72 @@ async function loadUsers() {
 
 function openCreateUser() {
   editingUser.value = null
-  userForm.value = { username: '', display_name: '', password: '', is_admin: false, tenant_ids: [] }
+  userForm.value = { username: '', display_name: '', password: '', is_admin: false }
+  newUserTenantId.value = null
+  newUserTenantAssignments.value = []
   userDialogVisible.value = true
 }
 
 function openEditUser(u: UserInfo) {
   editingUser.value = u
-  userForm.value = { username: u.username, display_name: u.display_name, password: '', is_admin: u.is_admin, tenant_ids: [] }
+  userForm.value = { username: u.username, display_name: u.display_name, password: '', is_admin: u.is_admin }
+  newUserTenantId.value = null
+  newUserTenantAssignments.value = []
   userDialogVisible.value = true
 }
 
+const newUserAssignableTenants = computed(() => {
+  const assigned = new Set(newUserTenantAssignments.value.map(ut => ut.tenant_id))
+  return tenants.value.filter(t => t.slug !== 'default' && !assigned.has(t.id))
+})
+
+const canSaveUser = computed(() => {
+  if (editingUser.value) {
+    return userForm.value.display_name.trim().length > 0
+  }
+  const hasRequiredAccountFields =
+    userForm.value.username.trim().length > 0 &&
+    userForm.value.display_name.trim().length > 0 &&
+    userForm.value.password.length > 0
+  const hasTenantAssignments = userForm.value.is_admin || newUserTenantAssignments.value.length > 0
+  return hasRequiredAccountFields && hasTenantAssignments
+})
+
+function addNewUserTenantSelection() {
+  if (!newUserTenantId.value) return
+  if (newUserTenantAssignments.value.some(ut => ut.tenant_id === newUserTenantId.value)) {
+    newUserTenantId.value = null
+    return
+  }
+  newUserTenantAssignments.value.push({
+    tenant_id: newUserTenantId.value,
+    ...defaultMockPermissions(),
+  })
+  newUserTenantId.value = null
+}
+
+function removeNewUserTenant(tenantId: number) {
+  newUserTenantAssignments.value = newUserTenantAssignments.value.filter(ut => ut.tenant_id !== tenantId)
+}
+
 async function saveUser() {
+  if (!canSaveUser.value) {
+    toast.add({ severity: 'warn', summary: 'Incomplete input', detail: 'Complete all required user fields and tenant assignments.', life: 3000 })
+    return
+  }
   try {
     if (editingUser.value) {
-      await adminUpdateUser(editingUser.value.id, { display_name: userForm.value.display_name, is_admin: userForm.value.is_admin })
+      await adminUpdateUser(editingUser.value.id, { display_name: userForm.value.display_name.trim(), is_admin: userForm.value.is_admin })
     } else {
-      const created = await adminCreateUser({ username: userForm.value.username, display_name: userForm.value.display_name, password: userForm.value.password, is_admin: userForm.value.is_admin })
-      await Promise.all(userForm.value.tenant_ids.map(tid => adminAssignTenant(created.id, tid)))
+      const created = await adminCreateUser({
+        username: userForm.value.username.trim(),
+        display_name: userForm.value.display_name.trim(),
+        password: userForm.value.password,
+        is_admin: userForm.value.is_admin,
+      })
+      await Promise.all(newUserTenantAssignments.value.map(assignment =>
+        adminAssignTenant(created.id, assignment),
+      ))
     }
     userDialogVisible.value = false
     await loadUsers()
@@ -388,10 +508,17 @@ const userTenantsVisible = ref(false)
 const userTenantsTarget = ref<UserInfo | null>(null)
 const userTenantList = ref<UserTenant[]>([])
 const assignTenantId = ref<number | null>(null)
+const defaultMockPermissions = (): MockPermissions => ({
+  can_create_mock: true,
+  can_edit_mock: true,
+  can_delete_mock: true,
+  can_test_mock: true,
+})
+const assignPermissions = ref<MockPermissions>(defaultMockPermissions())
 
 const assignableTenants = computed(() => {
   const assigned = new Set(userTenantList.value.map(ut => ut.tenant_id))
-  return tenants.value.filter(t => !assigned.has(t.id))
+  return tenants.value.filter(t => t.slug !== 'default' && !assigned.has(t.id))
 })
 
 function tenantNameById(id: number) {
@@ -401,6 +528,7 @@ function tenantNameById(id: number) {
 async function openUserTenants(u: UserInfo) {
   userTenantsTarget.value = u
   assignTenantId.value = null
+  assignPermissions.value = defaultMockPermissions()
   userTenantList.value = await adminListUserTenants(u.id)
   userTenantsVisible.value = true
 }
@@ -408,13 +536,45 @@ async function openUserTenants(u: UserInfo) {
 async function doAssignTenant() {
   if (!userTenantsTarget.value || !assignTenantId.value) return
   try {
-    await adminAssignTenant(userTenantsTarget.value.id, assignTenantId.value)
+    await adminAssignTenant(userTenantsTarget.value.id, {
+      tenant_id: assignTenantId.value,
+      ...assignPermissions.value,
+    })
     userTenantList.value = await adminListUserTenants(userTenantsTarget.value.id)
     assignTenantId.value = null
+    assignPermissions.value = defaultMockPermissions()
     toast.add({ severity: 'success', summary: 'Tenant assigned', life: 2000 })
   } catch (e: any) {
     toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data ?? e.message, life: 4000 })
   }
+}
+
+async function saveUserTenantPermissions(userTenant: UserTenant) {
+  if (!userTenantsTarget.value) return
+  try {
+    const saved = await adminAssignTenant(userTenantsTarget.value.id, {
+      tenant_id: userTenant.tenant_id,
+      can_create_mock: userTenant.can_create_mock,
+      can_edit_mock: userTenant.can_edit_mock,
+      can_delete_mock: userTenant.can_delete_mock,
+      can_test_mock: userTenant.can_test_mock,
+    })
+    const idx = userTenantList.value.findIndex(ut => ut.id === saved.id)
+    if (idx !== -1) userTenantList.value[idx] = saved
+    toast.add({ severity: 'success', summary: 'Permissions saved', life: 1500 })
+  } catch (e: any) {
+    userTenantList.value = await adminListUserTenants(userTenantsTarget.value.id)
+    toast.add({ severity: 'error', summary: 'Error', detail: e.response?.data ?? e.message, life: 4000 })
+  }
+}
+
+function updateUserTenantPermission(
+  userTenant: UserTenant,
+  field: keyof MockPermissions,
+  value: boolean,
+) {
+  userTenant[field] = value
+  saveUserTenantPermissions(userTenant)
 }
 
 async function removeUserTenant(tenantId: number) {

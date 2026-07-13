@@ -21,7 +21,10 @@ use crate::error::Result;
 use crate::traits::LogQuery;
 use crate::AppState;
 
-use app::{App, ConfirmAction, ModalKind, Tab, BODY_FIELD_IDX, BODY_SOURCE_FIELD_IDX, HEADER_FIELD_IDX, METHOD_FIELD_IDX, PAGINATION_ENABLED_FIELD_IDX, PORT_ID_FIELD_IDX, REQUEST_PARAMS_FIELD_IDX};
+use app::{
+    App, ConfirmAction, ModalKind, Tab, BODY_FIELD_IDX, BODY_SOURCE_FIELD_IDX, HEADER_FIELD_IDX,
+    METHOD_FIELD_IDX, PAGINATION_ENABLED_FIELD_IDX, PORT_ID_FIELD_IDX, REQUEST_PARAMS_FIELD_IDX,
+};
 use event::{spawn_event_task, Event};
 
 pub async fn run(state: AppState) -> Result<()> {
@@ -34,7 +37,11 @@ pub async fn run(state: AppState) -> Result<()> {
     let result = run_loop(&mut terminal, state).await;
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), DisableBracketedPaste, LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        DisableBracketedPaste,
+        LeaveAlternateScreen
+    )?;
     terminal.show_cursor()?;
 
     result
@@ -89,14 +96,23 @@ async fn run_loop(
                 }
                 if key.code == KeyCode::Char('q') && app.modal.is_none() && !app.show_fn_help {
                     let our_pid = std::process::id();
-                    let running: Vec<_> = app.ports.iter()
+                    let running: Vec<_> = app
+                        .ports
+                        .iter()
                         .filter(|p| p.running && p.owner_pid == Some(our_pid))
                         .collect();
                     if running.is_empty() {
                         break;
                     }
-                    let names: Vec<String> = running.iter()
-                        .map(|p| if p.label.is_empty() { p.port.to_string() } else { format!("{} ({})", p.port, p.label) })
+                    let names: Vec<String> = running
+                        .iter()
+                        .map(|p| {
+                            if p.label.is_empty() {
+                                p.port.to_string()
+                            } else {
+                                format!("{} ({})", p.port, p.label)
+                            }
+                        })
                         .collect();
                     app.confirm_message = format!(
                         "Running port(s): {} will stop on exit.\nUse 'mock start' to run as background daemon.",
@@ -135,11 +151,7 @@ async fn run_loop(
     Ok(())
 }
 
-async fn handle_normal_key(
-    app: &mut App,
-    code: crossterm::event::KeyCode,
-    state: &AppState,
-) {
+async fn handle_normal_key(app: &mut App, code: crossterm::event::KeyCode, state: &AppState) {
     use crossterm::event::KeyCode;
     match app.active_tab {
         Tab::Ports => match code {
@@ -147,9 +159,9 @@ async fn handle_normal_key(
             KeyCode::Char('2') => app.active_tab = Tab::Mocks,
             KeyCode::Char('3') => app.active_tab = Tab::Logs,
             KeyCode::Char('4') => app.active_tab = Tab::Functions,
-            KeyCode::Tab       => app.active_tab = app.active_tab.next(),
+            KeyCode::Tab => app.active_tab = app.active_tab.next(),
             KeyCode::Down | KeyCode::Char('j') => app.port_list_nav_down(),
-            KeyCode::Up   | KeyCode::Char('k') => app.port_list_nav_up(),
+            KeyCode::Up | KeyCode::Char('k') => app.port_list_nav_up(),
             KeyCode::Char('n') => app.open_port_create(),
             KeyCode::Char('e') => app.open_port_edit(),
             KeyCode::Char('d') => {
@@ -167,10 +179,17 @@ async fn handle_normal_key(
                             // We own it: disable so it won't auto-start on next launch, then stop.
                             let _ = state.port_store.set_port_enabled(p.id, false).await;
                             let _ = state.port_manager.stop_port(p.id).await;
+                            app.status_msg = None;
+                        } else if p.running && live_owner_pid(&p) {
+                            // Another process owns it. Request a stop via SQLite; that process'
+                            // reconciliation loop will perform the actual shutdown.
+                            let _ = state.port_store.set_port_enabled(p.id, false).await;
+                            app.status_msg = Some(format!("Stop requested for port {}", p.port));
                         } else if p.running {
-                            // Daemon owns it per SQLite: delegate via HTTP.
-                            let path = format!("/api/v1/ports/{}/stop", p.id);
-                            daemon_post(state.management_port, &path).await;
+                            // Stale DB state: clear ownership and leave it disabled.
+                            let _ = state.port_store.set_port_enabled(p.id, false).await;
+                            let _ = state.port_store.set_port_running(p.id, false, None).await;
+                            app.status_msg = None;
                         } else {
                             // TCP-probe only (old daemon without SQLite tracking).
                             app.status_msg = Some(
@@ -180,10 +199,20 @@ async fn handle_normal_key(
                     } else {
                         // Mark enabled so daemon/startup will always (re)start it.
                         let _ = state.port_store.set_port_enabled(p.id, true).await;
-                        let path = format!("/api/v1/ports/{}/start", p.id);
-                        if !daemon_post(state.management_port, &path).await {
-                            // No daemon running: start locally.
-                            let _ = state.port_manager.start_port(p.id).await;
+                        if live_owner_pid(&p) || management_port_open(state.management_port).await {
+                            // Clear an intentional-stop owner so the external reconciliation loop
+                            // can claim and start it.
+                            let _ = state.port_store.set_port_running(p.id, false, None).await;
+                            app.status_msg = Some(format!("Start requested for port {}", p.port));
+                        } else {
+                            let _ = state.port_store.set_port_running(p.id, false, None).await;
+                            match state.port_manager.start_port(p.id).await {
+                                Ok(()) => app.status_msg = None,
+                                Err(e) => {
+                                    app.status_msg =
+                                        Some(format!("Could not start port {}: {}", p.port, e));
+                                }
+                            }
                         }
                     }
                     refresh_ports(app).await;
@@ -196,9 +225,9 @@ async fn handle_normal_key(
             KeyCode::Char('2') => app.active_tab = Tab::Mocks,
             KeyCode::Char('3') => app.active_tab = Tab::Logs,
             KeyCode::Char('4') => app.active_tab = Tab::Functions,
-            KeyCode::Tab       => app.active_tab = app.active_tab.next(),
+            KeyCode::Tab => app.active_tab = app.active_tab.next(),
             KeyCode::Down | KeyCode::Char('j') => app.mock_list_nav_down(),
-            KeyCode::Up   | KeyCode::Char('k') => app.mock_list_nav_up(),
+            KeyCode::Up | KeyCode::Char('k') => app.mock_list_nav_up(),
             KeyCode::Char('n') => app.open_mock_create(),
             KeyCode::Char('e') => app.open_mock_edit(),
             KeyCode::Char('d') => {
@@ -223,7 +252,7 @@ async fn handle_normal_key(
             KeyCode::Char('2') => app.active_tab = Tab::Mocks,
             KeyCode::Char('3') => app.active_tab = Tab::Logs,
             KeyCode::Char('4') => app.active_tab = Tab::Functions,
-            KeyCode::Tab       => app.active_tab = app.active_tab.next(),
+            KeyCode::Tab => app.active_tab = app.active_tab.next(),
             KeyCode::Esc => {
                 app.log_detail_open = false;
                 app.log_detail_scroll = 0;
@@ -231,7 +260,9 @@ async fn handle_normal_key(
             KeyCode::Enter => {
                 if app.log_tab == crate::tui::app::LogTab::Request {
                     app.log_detail_open = !app.log_detail_open;
-                    if !app.log_detail_open { app.log_detail_scroll = 0; }
+                    if !app.log_detail_open {
+                        app.log_detail_scroll = 0;
+                    }
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -248,22 +279,26 @@ async fn handle_normal_key(
                     app.log_nav_up();
                 }
             }
-            KeyCode::Char('r') => { app.log_tab = crate::tui::app::LogTab::Request; app.log_detail_open = false; }
-            KeyCode::Char('s') => { app.log_tab = crate::tui::app::LogTab::System; app.log_detail_open = false; }
-            KeyCode::Char('c') => {
-                match app.log_tab {
-                    crate::tui::app::LogTab::Request => {
-                        let _ = state.log_store.clear_request_logs().await;
-                        app.request_logs.clear();
-                        app.request_log_state.select(None);
-                    }
-                    crate::tui::app::LogTab::System => {
-                        let _ = state.log_store.clear_system_logs().await;
-                        app.system_logs.clear();
-                        app.system_log_state.select(None);
-                    }
-                }
+            KeyCode::Char('r') => {
+                app.log_tab = crate::tui::app::LogTab::Request;
+                app.log_detail_open = false;
             }
+            KeyCode::Char('s') => {
+                app.log_tab = crate::tui::app::LogTab::System;
+                app.log_detail_open = false;
+            }
+            KeyCode::Char('c') => match app.log_tab {
+                crate::tui::app::LogTab::Request => {
+                    let _ = state.log_store.clear_request_logs().await;
+                    app.request_logs.clear();
+                    app.request_log_state.select(None);
+                }
+                crate::tui::app::LogTab::System => {
+                    let _ = state.log_store.clear_system_logs().await;
+                    app.system_logs.clear();
+                    app.system_log_state.select(None);
+                }
+            },
             _ => {}
         },
         Tab::Functions => match code {
@@ -271,17 +306,13 @@ async fn handle_normal_key(
             KeyCode::Char('2') => app.active_tab = Tab::Mocks,
             KeyCode::Char('3') => app.active_tab = Tab::Logs,
             KeyCode::Char('4') => app.active_tab = Tab::Functions,
-            KeyCode::Tab       => app.active_tab = app.active_tab.next(),
+            KeyCode::Tab => app.active_tab = app.active_tab.next(),
             _ => {}
         },
     }
 }
 
-async fn handle_modal_key(
-    app: &mut App,
-    key: crossterm::event::KeyEvent,
-    state: &AppState,
-) {
+async fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent, state: &AppState) {
     use crossterm::event::{KeyCode, KeyModifiers};
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let code = key.code;
@@ -289,8 +320,12 @@ async fn handle_modal_key(
     // If user pressed Esc and we're waiting for their confirmation to discard:
     if app.cancel_confirm_pending {
         match code {
-            KeyCode::Enter => { app.dismiss_modal(); }
-            KeyCode::Esc   => { app.cancel_confirm_pending = false; }
+            KeyCode::Enter => {
+                app.dismiss_modal();
+            }
+            KeyCode::Esc => {
+                app.cancel_confirm_pending = false;
+            }
             _ => {}
         }
         return;
@@ -299,133 +334,192 @@ async fn handle_modal_key(
     // Clear any previous validation error on each keypress.
     app.modal_error = None;
 
-    let is_mock_modal        = matches!(app.modal, Some(ModalKind::MockCreate) | Some(ModalKind::MockEdit));
-    let on_port_field        = app.modal_field_idx == PORT_ID_FIELD_IDX;
-    let on_method_field      = app.modal_field_idx == METHOD_FIELD_IDX;
-    let on_header_field      = app.modal_field_idx == HEADER_FIELD_IDX;
-    let on_body_src_field    = app.modal_field_idx == BODY_SOURCE_FIELD_IDX;
-    let on_pagination_field  = app.modal_field_idx == PAGINATION_ENABLED_FIELD_IDX;
-    let on_select_field      = is_mock_modal && (on_port_field || on_method_field || on_body_src_field || on_pagination_field);
+    let is_mock_modal = matches!(
+        app.modal,
+        Some(ModalKind::MockCreate) | Some(ModalKind::MockEdit)
+    );
+    let on_port_field = app.modal_field_idx == PORT_ID_FIELD_IDX;
+    let on_method_field = app.modal_field_idx == METHOD_FIELD_IDX;
+    let on_header_field = app.modal_field_idx == HEADER_FIELD_IDX;
+    let on_body_src_field = app.modal_field_idx == BODY_SOURCE_FIELD_IDX;
+    let on_pagination_field = app.modal_field_idx == PAGINATION_ENABLED_FIELD_IDX;
+    let on_select_field = is_mock_modal
+        && (on_port_field || on_method_field || on_body_src_field || on_pagination_field);
 
     match code {
         KeyCode::Esc if matches!(app.modal, Some(ModalKind::Confirm)) => app.dismiss_modal(),
-        KeyCode::Esc => { app.cancel_confirm_pending = true; }
-        KeyCode::Tab    => { app.modal_field_next(); app.modal_body_scroll = 0; }
-        KeyCode::BackTab => { app.modal_field_prev(); app.modal_body_scroll = 0; }
+        KeyCode::Esc => {
+            app.cancel_confirm_pending = true;
+        }
+        KeyCode::Tab => {
+            app.modal_field_next();
+            app.modal_body_scroll = 0;
+        }
+        KeyCode::BackTab => {
+            app.modal_field_prev();
+            app.modal_body_scroll = 0;
+        }
         KeyCode::Char('u') if ctrl => app.modal_clear_field(),
-        KeyCode::Left if is_mock_modal && on_port_field       => app.cycle_port_field(false),
-        KeyCode::Right if is_mock_modal && on_port_field      => app.cycle_port_field(true),
-        KeyCode::Left if is_mock_modal && on_method_field     => app.cycle_method_field(false),
-        KeyCode::Right if is_mock_modal && on_method_field    => app.cycle_method_field(true),
-        KeyCode::Left if is_mock_modal && on_body_src_field   => app.cycle_body_source_field(false),
-        KeyCode::Right if is_mock_modal && on_body_src_field  => app.cycle_body_source_field(true),
-        KeyCode::Left if is_mock_modal && on_pagination_field  => app.cycle_bool_field(PAGINATION_ENABLED_FIELD_IDX, false),
-        KeyCode::Right if is_mock_modal && on_pagination_field => app.cycle_bool_field(PAGINATION_ENABLED_FIELD_IDX, true),
-        KeyCode::Right if is_mock_modal && on_header_field
-            && app.header_autocomplete_suggestion().is_some() => app.accept_header_autocomplete(),
-        KeyCode::Up   if is_mock_modal && app.modal_field_idx == BODY_FIELD_IDX
-            => { app.modal_body_scroll = app.modal_body_scroll.saturating_sub(1); }
-        KeyCode::Down if is_mock_modal && app.modal_field_idx == BODY_FIELD_IDX
-            => { app.modal_body_scroll = app.modal_body_scroll.saturating_add(1); }
-        KeyCode::Left  if !on_select_field => app.modal_cursor_left(),
+        KeyCode::Left if is_mock_modal && on_port_field => app.cycle_port_field(false),
+        KeyCode::Right if is_mock_modal && on_port_field => app.cycle_port_field(true),
+        KeyCode::Left if is_mock_modal && on_method_field => app.cycle_method_field(false),
+        KeyCode::Right if is_mock_modal && on_method_field => app.cycle_method_field(true),
+        KeyCode::Left if is_mock_modal && on_body_src_field => app.cycle_body_source_field(false),
+        KeyCode::Right if is_mock_modal && on_body_src_field => app.cycle_body_source_field(true),
+        KeyCode::Left if is_mock_modal && on_pagination_field => {
+            app.cycle_bool_field(PAGINATION_ENABLED_FIELD_IDX, false)
+        }
+        KeyCode::Right if is_mock_modal && on_pagination_field => {
+            app.cycle_bool_field(PAGINATION_ENABLED_FIELD_IDX, true)
+        }
+        KeyCode::Right
+            if is_mock_modal
+                && on_header_field
+                && app.header_autocomplete_suggestion().is_some() =>
+        {
+            app.accept_header_autocomplete()
+        }
+        KeyCode::Up if is_mock_modal && app.modal_field_idx == BODY_FIELD_IDX => {
+            app.modal_body_scroll = app.modal_body_scroll.saturating_sub(1);
+        }
+        KeyCode::Down if is_mock_modal && app.modal_field_idx == BODY_FIELD_IDX => {
+            app.modal_body_scroll = app.modal_body_scroll.saturating_add(1);
+        }
+        KeyCode::Left if !on_select_field => app.modal_cursor_left(),
         KeyCode::Right if !on_select_field => app.modal_cursor_right(),
-        KeyCode::Backspace if !on_select_field => { app.modal_backspace(); app.modal_auto_scroll_body(); }
+        KeyCode::Backspace if !on_select_field => {
+            app.modal_backspace();
+            app.modal_auto_scroll_body();
+        }
         KeyCode::Char('+') if is_mock_modal && app.modal_field_idx == REQUEST_PARAMS_FIELD_IDX => {
-            let field = app.modal_fields.get(REQUEST_PARAMS_FIELD_IDX).cloned().unwrap_or_default();
+            let field = app
+                .modal_fields
+                .get(REQUEST_PARAMS_FIELD_IDX)
+                .cloned()
+                .unwrap_or_default();
             let trimmed = field.trim_end().to_owned();
-            let new_val = if trimmed.is_empty() { String::new() } else { format!("{} | ", trimmed) };
-            if let Some(f) = app.modal_fields.get_mut(REQUEST_PARAMS_FIELD_IDX) { *f = new_val; }
-            app.modal_cursor_pos = app.modal_fields.get(REQUEST_PARAMS_FIELD_IDX).map(|s| s.chars().count()).unwrap_or(0);
+            let new_val = if trimmed.is_empty() {
+                String::new()
+            } else {
+                format!("{} | ", trimmed)
+            };
+            if let Some(f) = app.modal_fields.get_mut(REQUEST_PARAMS_FIELD_IDX) {
+                *f = new_val;
+            }
+            app.modal_cursor_pos = app
+                .modal_fields
+                .get(REQUEST_PARAMS_FIELD_IDX)
+                .map(|s| s.chars().count())
+                .unwrap_or(0);
         }
         KeyCode::Char('+') if is_mock_modal && app.modal_field_idx == HEADER_FIELD_IDX => {
-            let field = app.modal_fields.get(HEADER_FIELD_IDX).cloned().unwrap_or_default();
+            let field = app
+                .modal_fields
+                .get(HEADER_FIELD_IDX)
+                .cloned()
+                .unwrap_or_default();
             let trimmed = field.trim_end().to_owned();
-            let new_val = if trimmed.is_empty() { String::new() } else { format!("{} | ", trimmed) };
-            if let Some(f) = app.modal_fields.get_mut(HEADER_FIELD_IDX) { *f = new_val; }
-            app.modal_cursor_pos = app.modal_fields.get(HEADER_FIELD_IDX).map(|s| s.chars().count()).unwrap_or(0);
+            let new_val = if trimmed.is_empty() {
+                String::new()
+            } else {
+                format!("{} | ", trimmed)
+            };
+            if let Some(f) = app.modal_fields.get_mut(HEADER_FIELD_IDX) {
+                *f = new_val;
+            }
+            app.modal_cursor_pos = app
+                .modal_fields
+                .get(HEADER_FIELD_IDX)
+                .map(|s| s.chars().count())
+                .unwrap_or(0);
         }
-        KeyCode::Char(c) if !on_select_field => { app.modal_type_char(c); app.modal_auto_scroll_body(); }
-        KeyCode::Enter => {
-            match app.modal.clone() {
-                Some(ModalKind::PortCreate) => {
-                    if let Some(err) = app.validate_port_modal() {
-                        app.modal_error = Some(err);
-                    } else {
-                        let port: u16 = app.modal_fields.get(0).and_then(|s| s.parse().ok()).unwrap_or(8080);
-                        let label = app.modal_fields.get(1).cloned().unwrap_or_default();
-                        match state.port_store.create_port(port, &label).await {
-                            Ok(_) => {
-                                app.status_msg = None;
-                                app.dismiss_modal();
-                                refresh_ports(app).await;
-                            }
-                            Err(_) => {
-                                app.modal_error = Some(format!("Port {} is already in use", port));
-                            }
-                        }
-                    }
-                }
-                Some(ModalKind::PortEdit) => {
-                    if let Some(err) = app.validate_port_modal() {
-                        app.modal_error = Some(err);
-                    } else if let Some(p) = app.selected_port().cloned() {
-                        let label = app.modal_fields.get(1).cloned().unwrap_or_default();
-                        let enabled = p.enabled;
-                        if let Ok(_) = state.port_store.update_port(p.id, &label, enabled).await {
+        KeyCode::Char(c) if !on_select_field => {
+            app.modal_type_char(c);
+            app.modal_auto_scroll_body();
+        }
+        KeyCode::Enter => match app.modal.clone() {
+            Some(ModalKind::PortCreate) => {
+                if let Some(err) = app.validate_port_modal() {
+                    app.modal_error = Some(err);
+                } else {
+                    let port: u16 = app
+                        .modal_fields
+                        .get(0)
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(8080);
+                    let label = app.modal_fields.get(1).cloned().unwrap_or_default();
+                    match state.port_store.create_port(port, &label).await {
+                        Ok(_) => {
+                            app.status_msg = None;
                             app.dismiss_modal();
                             refresh_ports(app).await;
                         }
-                    }
-                }
-                Some(ModalKind::MockCreate) => {
-                    if let Some(err) = app.validate_mock_modal() {
-                        app.modal_error = Some(err);
-                    } else if let Some(req) = app.build_create_mock() {
-                        if let Ok(m) = state.mock_store.create_mock(req).await {
-                            restart_port_or_delegate(state, m.port_id).await;
-                            app.dismiss_modal();
-                            refresh_mocks(app).await;
+                        Err(_) => {
+                            app.modal_error = Some(format!("Port {} is already in use", port));
                         }
                     }
                 }
-                Some(ModalKind::MockEdit) => {
-                    if let Some(err) = app.validate_mock_modal() {
-                        app.modal_error = Some(err);
-                    } else if let Some(mock_id) = app.selected_mock().map(|m| m.id) {
-                        let port_id = app.selected_mock().map(|m| m.port_id).unwrap_or(0);
-                        let req = app.build_update_mock();
-                        if let Ok(_) = state.mock_store.update_mock(mock_id, req).await {
-                            restart_port_or_delegate(state, port_id).await;
-                            app.dismiss_modal();
-                            refresh_mocks(app).await;
-                        }
-                    }
-                }
-                Some(ModalKind::Confirm) => {
-                    if let Some(action) = app.confirm_action.clone() {
-                        match action {
-                            ConfirmAction::DeletePort(id) => {
-                                stop_port_or_delegate(state, id).await;
-                                let _ = state.port_store.delete_port(id).await;
-                                refresh_ports(app).await;
-                            }
-                            ConfirmAction::DeleteMock(id) => {
-                                if let Some(m) = state.mock_store.get_mock(id).await.ok().flatten() {
-                                    let _ = state.mock_store.delete_mock(id).await;
-                                    restart_port_or_delegate(state, m.port_id).await;
-                                }
-                                refresh_mocks(app).await;
-                            }
-                            ConfirmAction::Quit => {
-                                app.should_quit = true;
-                            }
-                        }
-                    }
-                    app.dismiss_modal();
-                }
-                _ => {}
             }
-        }
+            Some(ModalKind::PortEdit) => {
+                if let Some(err) = app.validate_port_modal() {
+                    app.modal_error = Some(err);
+                } else if let Some(p) = app.selected_port().cloned() {
+                    let label = app.modal_fields.get(1).cloned().unwrap_or_default();
+                    let enabled = p.enabled;
+                    if let Ok(_) = state.port_store.update_port(p.id, &label, enabled).await {
+                        app.dismiss_modal();
+                        refresh_ports(app).await;
+                    }
+                }
+            }
+            Some(ModalKind::MockCreate) => {
+                if let Some(err) = app.validate_mock_modal() {
+                    app.modal_error = Some(err);
+                } else if let Some(req) = app.build_create_mock() {
+                    if let Ok(m) = state.mock_store.create_mock(req).await {
+                        restart_port_or_delegate(state, m.port_id).await;
+                        app.dismiss_modal();
+                        refresh_mocks(app).await;
+                    }
+                }
+            }
+            Some(ModalKind::MockEdit) => {
+                if let Some(err) = app.validate_mock_modal() {
+                    app.modal_error = Some(err);
+                } else if let Some(mock_id) = app.selected_mock().map(|m| m.id) {
+                    let port_id = app.selected_mock().map(|m| m.port_id).unwrap_or(0);
+                    let req = app.build_update_mock();
+                    if let Ok(_) = state.mock_store.update_mock(mock_id, req).await {
+                        restart_port_or_delegate(state, port_id).await;
+                        app.dismiss_modal();
+                        refresh_mocks(app).await;
+                    }
+                }
+            }
+            Some(ModalKind::Confirm) => {
+                if let Some(action) = app.confirm_action.clone() {
+                    match action {
+                        ConfirmAction::DeletePort(id) => {
+                            stop_port_or_delegate(state, id).await;
+                            let _ = state.port_store.delete_port(id).await;
+                            refresh_ports(app).await;
+                        }
+                        ConfirmAction::DeleteMock(id) => {
+                            if let Some(m) = state.mock_store.get_mock(id).await.ok().flatten() {
+                                let _ = state.mock_store.delete_mock(id).await;
+                                restart_port_or_delegate(state, m.port_id).await;
+                            }
+                            refresh_mocks(app).await;
+                        }
+                        ConfirmAction::Quit => {
+                            app.should_quit = true;
+                        }
+                    }
+                }
+                app.dismiss_modal();
+            }
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -448,11 +542,18 @@ async fn refresh_ports(app: &mut App) {
 
 async fn refresh_logs(app: &mut App) {
     use crate::traits::LogQuery;
-    let query = LogQuery { page_size: 200, ..Default::default() };
+    let query = LogQuery {
+        page_size: 200,
+        ..Default::default()
+    };
 
     if let Ok(page) = app.state.log_store.list_request_logs(query.clone()).await {
         let latest_id = app.request_logs.first().map(|l| l.id).unwrap_or(0);
-        let new_logs: Vec<_> = page.items.into_iter().filter(|l| l.id > latest_id).collect();
+        let new_logs: Vec<_> = page
+            .items
+            .into_iter()
+            .filter(|l| l.id > latest_id)
+            .collect();
         if !new_logs.is_empty() {
             let mut merged = new_logs;
             merged.extend(app.request_logs.drain(..));
@@ -464,7 +565,11 @@ async fn refresh_logs(app: &mut App) {
 
     if let Ok(page) = app.state.log_store.list_system_logs(query).await {
         let latest_id = app.system_logs.first().map(|l| l.id).unwrap_or(0);
-        let new_logs: Vec<_> = page.items.into_iter().filter(|l| l.id > latest_id).collect();
+        let new_logs: Vec<_> = page
+            .items
+            .into_iter()
+            .filter(|l| l.id > latest_id)
+            .collect();
         if !new_logs.is_empty() {
             let mut merged = new_logs;
             merged.extend(app.system_logs.drain(..));
@@ -479,6 +584,23 @@ async fn is_port_open(port: u16) -> bool {
     tokio::time::timeout(
         tokio::time::Duration::from_millis(100),
         tokio::net::TcpStream::connect(std::net::SocketAddr::from(([127, 0, 0, 1], port))),
+    )
+    .await
+    .map(|r| r.is_ok())
+    .unwrap_or(false)
+}
+
+fn live_owner_pid(port: &crate::models::PortConfig) -> bool {
+    port.owner_pid
+        .filter(|pid| *pid != std::process::id())
+        .map(crate::daemon::is_process_alive)
+        .unwrap_or(false)
+}
+
+async fn management_port_open(port: u16) -> bool {
+    tokio::time::timeout(
+        tokio::time::Duration::from_millis(100),
+        tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)),
     )
     .await
     .map(|r| r.is_ok())
@@ -505,8 +627,7 @@ async fn stop_port_or_delegate(state: &AppState, port_id: i64) {
 /// Returns `true` if the connection was accepted (daemon is running).
 async fn daemon_post(mgmt_port: u16, path: &str) -> bool {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let Ok(mut stream) =
-        tokio::net::TcpStream::connect(format!("127.0.0.1:{}", mgmt_port)).await
+    let Ok(mut stream) = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", mgmt_port)).await
     else {
         return false;
     };
@@ -531,7 +652,10 @@ async fn refresh_mocks(app: &mut App) {
 }
 
 async fn load_initial_logs(app: &mut App) {
-    let query = LogQuery { page_size: 100, ..Default::default() };
+    let query = LogQuery {
+        page_size: 100,
+        ..Default::default()
+    };
     if let Ok(page) = app.state.log_store.list_request_logs(query.clone()).await {
         app.request_logs = page.items; // DB returns newest-first; matches our storage order
     }
@@ -556,9 +680,9 @@ fn render(f: &mut ratatui::Frame, app: &mut App) {
         Line::from(" [4] Functions  "),
     ];
     let active = match app.active_tab {
-        Tab::Ports     => 0,
-        Tab::Mocks     => 1,
-        Tab::Logs      => 2,
+        Tab::Ports => 0,
+        Tab::Mocks => 1,
+        Tab::Logs => 2,
         Tab::Functions => 3,
     };
     let tabs = Tabs::new(titles)
@@ -577,9 +701,9 @@ fn render(f: &mut ratatui::Frame, app: &mut App) {
 
     // ---- tab content ----
     match app.active_tab {
-        Tab::Ports     => views::ports::draw(f, app, chunks[1]),
-        Tab::Mocks     => views::mocks::draw(f, app, chunks[1]),
-        Tab::Logs      => views::logs::draw(f, app, chunks[1]),
+        Tab::Ports => views::ports::draw(f, app, chunks[1]),
+        Tab::Mocks => views::mocks::draw(f, app, chunks[1]),
+        Tab::Logs => views::logs::draw(f, app, chunks[1]),
         Tab::Functions => views::functions::draw(f, app, chunks[1]),
     }
 
@@ -602,8 +726,7 @@ fn render(f: &mut ratatui::Frame, app: &mut App) {
 
     // ---- status bar ----
     if let Some(msg) = &app.status_msg {
-        let status = Paragraph::new(msg.as_str())
-            .style(Style::default().fg(Color::Yellow));
+        let status = Paragraph::new(msg.as_str()).style(Style::default().fg(Color::Yellow));
         let status_area = ratatui::layout::Rect {
             x: 0,
             y: area.height.saturating_sub(1),
@@ -627,7 +750,11 @@ fn draw_confirm(f: &mut ratatui::Frame, app: &App) {
     f.render_widget(widget, area);
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: ratatui::layout::Rect) -> ratatui::layout::Rect {
+fn centered_rect(
+    percent_x: u16,
+    percent_y: u16,
+    r: ratatui::layout::Rect,
+) -> ratatui::layout::Rect {
     let popup = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

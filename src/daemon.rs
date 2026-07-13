@@ -110,7 +110,10 @@ pub fn stop(db: &str) -> anyhow::Result<()> {
     };
 
     if !is_process_alive(pid) {
-        println!("Mock server (PID: {}) is not running. Cleaning up stale PID file.", pid);
+        println!(
+            "Mock server (PID: {}) is not running. Cleaning up stale PID file.",
+            pid
+        );
         remove_pid(db);
         return Ok(());
     }
@@ -155,7 +158,6 @@ pub fn restart(db: &str, port: u16) -> anyhow::Result<()> {
     start(db, port)
 }
 
-
 pub fn status(db: &str) {
     match read_pid(db) {
         None => println!("Mock server is not running."),
@@ -177,15 +179,19 @@ fn print_running_details(db: &str) {
         return;
     };
 
-    let Ok(mut stmt) = conn.prepare(
-        "SELECT id, port, label FROM port_configs WHERE running = 1 ORDER BY port",
-    ) else {
+    let Ok(mut stmt) =
+        conn.prepare("SELECT id, port, label FROM port_configs WHERE running = 1 ORDER BY port")
+    else {
         return;
     };
 
     let ports: Vec<(i64, u16, String)> = stmt
         .query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)? as u16, row.get::<_, String>(2)?))
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)? as u16,
+                row.get::<_, String>(2)?,
+            ))
         })
         .map(|rows| rows.flatten().collect())
         .unwrap_or_default();
@@ -211,7 +217,11 @@ fn print_running_details(db: &str) {
 
         let mocks: Vec<(String, String, String)> = mock_stmt
             .query_map([port_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
             })
             .map(|rows| rows.flatten().collect())
             .unwrap_or_default();

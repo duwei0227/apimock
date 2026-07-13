@@ -9,24 +9,18 @@ use crate::models::LogEvent;
 pub enum Event {
     Key(KeyEvent),
     Paste(String),
-    Resize,  // terminal size change; handled by ratatui automatically
+    Resize, // terminal size change; handled by ratatui automatically
     Tick,
     Log(LogEvent),
 }
 
-pub fn spawn_event_task(
-    log_rx: broadcast::Receiver<LogEvent>,
-    tx: mpsc::Sender<Event>,
-) {
+pub fn spawn_event_task(log_rx: broadcast::Receiver<LogEvent>, tx: mpsc::Sender<Event>) {
     tokio::spawn(async move {
         run_event_loop(log_rx, tx).await;
     });
 }
 
-async fn run_event_loop(
-    mut log_rx: broadcast::Receiver<LogEvent>,
-    tx: mpsc::Sender<Event>,
-) {
+async fn run_event_loop(mut log_rx: broadcast::Receiver<LogEvent>, tx: mpsc::Sender<Event>) {
     let mut stream = EventStream::new();
     let mut tick = interval(Duration::from_millis(250));
 

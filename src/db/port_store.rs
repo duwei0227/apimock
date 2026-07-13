@@ -130,7 +130,10 @@ impl PortStore for SqlitePortStore {
     async fn delete_port(&self, id: i64) -> Result<()> {
         self.conn
             .call(move |conn| {
-                conn.execute("DELETE FROM port_configs WHERE id = ?1", rusqlite::params![id])?;
+                conn.execute(
+                    "DELETE FROM port_configs WHERE id = ?1",
+                    rusqlite::params![id],
+                )?;
                 Ok(())
             })
             .await

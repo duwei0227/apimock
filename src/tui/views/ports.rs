@@ -14,27 +14,34 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Min(3), Constraint::Length(3)])
         .split(area);
 
-    let rows: Vec<Row> = app.ports.iter().enumerate().map(|(i, p)| {
-        let running = app.running_port_ids.contains(&p.id);
-        let (status, status_style) = if running {
-            ("● Running", Style::default().fg(Color::Green))
-        } else {
-            ("○ Stopped", Style::default().fg(Color::Gray))
-        };
-        let style = if i == app.port_selected {
-            Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-        };
-        Row::new(vec![
-            Cell::from(p.id.to_string()),
-            Cell::from(app.system_ip.clone()),
-            Cell::from(p.port.to_string()),
-            Cell::from(p.label.clone()),
-            Cell::from(Span::styled(status, status_style)),
-        ])
-        .style(style)
-    }).collect();
+    let rows: Vec<Row> = app
+        .ports
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let running = app.running_port_ids.contains(&p.id);
+            let (status, status_style) = if running {
+                ("● Running", Style::default().fg(Color::Green))
+            } else {
+                ("○ Stopped", Style::default().fg(Color::Gray))
+            };
+            let style = if i == app.port_selected {
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            Row::new(vec![
+                Cell::from(p.id.to_string()),
+                Cell::from(app.system_ip.clone()),
+                Cell::from(p.port.to_string()),
+                Cell::from(p.label.clone()),
+                Cell::from(Span::styled(status, status_style)),
+            ])
+            .style(style)
+        })
+        .collect();
 
     let table = Table::new(
         rows,
@@ -73,8 +80,8 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
 /// Render the port create/edit modal.
 pub fn draw_modal(f: &mut Frame, app: &App) {
-    use ratatui::widgets::Clear;
     use crate::tui::app::ModalKind;
+    use ratatui::widgets::Clear;
 
     let is_edit = matches!(app.modal, Some(ModalKind::PortEdit));
     let title = if is_edit { " Edit Port " } else { " New Port " };
@@ -83,7 +90,10 @@ pub fn draw_modal(f: &mut Frame, app: &App) {
     let area = centered_rect(40, 50, f.area());
     f.render_widget(Clear, area);
 
-    let block = Block::default().title(title).borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan));
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
     f.render_widget(block, area);
 
     let inner = Layout::default()
@@ -93,7 +103,7 @@ pub fn draw_modal(f: &mut Frame, app: &App) {
             std::iter::repeat(Constraint::Length(3))
                 .take(labels.len())
                 .chain(std::iter::once(Constraint::Min(1)))
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
         )
         .split(area);
 
@@ -110,26 +120,41 @@ pub fn draw_modal(f: &mut Frame, app: &App) {
             let cur = app.modal_cursor_pos.min(chars.len());
             let before: String = chars[..cur].iter().collect();
             let cursor_ch = chars.get(cur).copied().unwrap_or(' ');
-            let after: String = chars[cur.saturating_add(1).min(chars.len())..].iter().collect();
+            let after: String = chars[cur.saturating_add(1).min(chars.len())..]
+                .iter()
+                .collect();
             Line::from(vec![
                 Span::raw(before),
-                Span::styled(cursor_ch.to_string(), Style::default().add_modifier(Modifier::REVERSED)),
+                Span::styled(
+                    cursor_ch.to_string(),
+                    Style::default().add_modifier(Modifier::REVERSED),
+                ),
                 Span::raw(after),
             ])
         } else {
             Line::from(value)
         };
-        let widget = Paragraph::new(content)
-            .block(Block::default().title(*label).borders(Borders::ALL).border_style(border_style));
+        let widget = Paragraph::new(content).block(
+            Block::default()
+                .title(*label)
+                .borders(Borders::ALL)
+                .border_style(border_style),
+        );
         f.render_widget(widget, inner[i]);
     }
 
     let (hint_text, hint_style) = if let Some(err) = &app.modal_error {
         (err.as_str(), Style::default().fg(Color::Red))
     } else if app.cancel_confirm_pending {
-        ("Discard changes?  Enter: yes  Esc: no", Style::default().fg(Color::Yellow))
+        (
+            "Discard changes?  Enter: yes  Esc: no",
+            Style::default().fg(Color::Yellow),
+        )
     } else {
-        ("Tab: next field  Enter: save  Esc: cancel", Style::default().fg(Color::DarkGray))
+        (
+            "Tab: next field  Enter: save  Esc: cancel",
+            Style::default().fg(Color::DarkGray),
+        )
     };
     let hint = Paragraph::new(hint_text).style(hint_style);
     if let Some(last) = inner.last() {

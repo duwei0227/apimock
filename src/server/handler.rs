@@ -68,54 +68,61 @@ pub async fn mock_fallback(
     // Find matching mock (tenant slug from first path segment, exact method beats ANY).
     let matched = find_mock(&state.mocks, &method, &path);
 
-    let (response, mock_id, resp_body_str, resp_headers_map, matched_tenant_id) = if let Some(m) = matched {
-        let mock = &m.mock;
-        if mock.response_delay_ms > 0 {
-            tokio::time::sleep(Duration::from_millis(mock.response_delay_ms)).await;
-        }
-
-        let raw_body = if let Some(file_path) = mock.response_body.strip_prefix("file://") {
-            match tokio::fs::read_to_string(file_path).await {
-                Ok(contents) => contents,
-                Err(e) => format!("{{\"error\":\"file read failed: {}\"}}", e),
+    let (response, mock_id, resp_body_str, resp_headers_map, matched_tenant_id) =
+        if let Some(m) = matched {
+            let mock = &m.mock;
+            if mock.response_delay_ms > 0 {
+                tokio::time::sleep(Duration::from_millis(mock.response_delay_ms)).await;
             }
+
+            let raw_body = if let Some(file_path) = mock.response_body.strip_prefix("file://") {
+                match tokio::fs::read_to_string(file_path).await {
+                    Ok(contents) => contents,
+                    Err(e) => format!("{{\"error\":\"file read failed: {}\"}}", e),
+                }
+            } else {
+                mock.response_body.clone()
+            };
+            let rendered = template::render(&raw_body);
+            let body = apply_filter_and_pagination(
+                &rendered,
+                mock,
+                &method,
+                query_string.as_deref(),
+                request_body.as_deref(),
+            );
+
+            let mut builder = Response::builder()
+                .status(StatusCode::from_u16(mock.response_status).unwrap_or(StatusCode::OK));
+
+            for (k, v) in &mock.response_headers {
+                if let (Ok(name), Ok(value)) = (k.parse::<HeaderName>(), v.parse::<HeaderValue>()) {
+                    builder = builder.header(name, value);
+                }
+            }
+
+            let id = mock.id;
+            let tenant_id = mock.tenant_id;
+            let resp_headers = mock.response_headers.clone();
+            (
+                builder.body(Body::from(body.clone())).unwrap_or_default(),
+                Some(id),
+                Some(body),
+                resp_headers,
+                Some(tenant_id),
+            )
         } else {
-            mock.response_body.clone()
+            (
+                Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::from(r#"{"error":"no mock matched"}"#))
+                    .unwrap_or_default(),
+                None,
+                Some(r#"{"error":"no mock matched"}"#.to_owned()),
+                HashMap::new(),
+                None,
+            )
         };
-        let rendered = template::render(&raw_body);
-        let body = apply_filter_and_pagination(&rendered, mock, &method, query_string.as_deref(), request_body.as_deref());
-
-        let mut builder =
-            Response::builder().status(StatusCode::from_u16(mock.response_status).unwrap_or(StatusCode::OK));
-
-        for (k, v) in &mock.response_headers {
-            if let (Ok(name), Ok(value)) = (k.parse::<HeaderName>(), v.parse::<HeaderValue>()) {
-                builder = builder.header(name, value);
-            }
-        }
-
-        let id = mock.id;
-        let tenant_id = mock.tenant_id;
-        let resp_headers = mock.response_headers.clone();
-        (
-            builder.body(Body::from(body.clone())).unwrap_or_default(),
-            Some(id),
-            Some(body),
-            resp_headers,
-            Some(tenant_id),
-        )
-    } else {
-        (
-            Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(Body::from(r#"{"error":"no mock matched"}"#))
-                .unwrap_or_default(),
-            None,
-            Some(r#"{"error":"no mock matched"}"#.to_owned()),
-            HashMap::new(),
-            None,
-        )
-    };
 
     let duration_ms = start.elapsed().as_millis() as u64;
     let resp_status = response.status().as_u16();
@@ -163,7 +170,7 @@ fn percent_decode(s: &str) -> String {
             result.push(' ');
             i += 1;
         } else if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(hex) = std::str::from_utf8(&bytes[i+1..i+3]) {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
                 if let Ok(byte) = u8::from_str_radix(hex, 16) {
                     result.push(byte as char);
                     i += 3;
@@ -262,7 +269,10 @@ fn apply_filter_and_pagination(
     );
 
     let filtered = if filters.is_empty() {
-        tracing::debug!(mock_id = mock.id, "apply_filter: no active filters, returning body as-is");
+        tracing::debug!(
+            mock_id = mock.id,
+            "apply_filter: no active filters, returning body as-is"
+        );
         json
     } else {
         tracing::debug!(mock_id = mock.id, active_filters = ?filters, "apply_filter: applying filters");
@@ -273,11 +283,14 @@ fn apply_filter_and_pagination(
         return serde_json::to_string(&filtered).unwrap_or_else(|_| body.to_owned());
     }
 
-    let data_field  = mock.pagination_data_field.trim();
+    let data_field = mock.pagination_data_field.trim();
     let total_field = mock.pagination_total_field.trim();
-    let page_param  = mock.pagination_page_param.as_str();
-    let size_param  = mock.pagination_size_param.as_str();
-    let page: usize = query_params.get(page_param).and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+    let page_param = mock.pagination_page_param.as_str();
+    let size_param = mock.pagination_size_param.as_str();
+    let page: usize = query_params
+        .get(page_param)
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(0);
     let page_size: usize = query_params
         .get(size_param)
         .and_then(|s| s.parse::<usize>().ok())
@@ -326,7 +339,11 @@ fn apply_filter_and_pagination(
 
 /// Replace the field at `path` with `new_value`.
 /// Dot-notation paths (e.g. `body.list`) traverse explicitly; plain names do DFS.
-fn set_json_field(json: serde_json::Value, path: &str, new_value: &serde_json::Value) -> serde_json::Value {
+fn set_json_field(
+    json: serde_json::Value,
+    path: &str,
+    new_value: &serde_json::Value,
+) -> serde_json::Value {
     let (result, _) = set_json_field_inner(json, path, new_value);
     result
 }
@@ -360,7 +377,9 @@ fn set_json_field_inner(
                         (k, v)
                     } else {
                         let (new_v, f) = set_json_field_inner(v, path, new_value);
-                        if f { found = true; }
+                        if f {
+                            found = true;
+                        }
                         (k, new_v)
                     }
                 })
@@ -425,7 +444,10 @@ fn apply_filter_recursive(
         serde_json::Value::Array(arr) => {
             // Only filter if the array contains at least one object item.
             // Pure primitive arrays (e.g. ["GET","POST"] or [200,404]) pass through.
-            if arr.iter().any(|v| matches!(v, serde_json::Value::Object(_))) {
+            if arr
+                .iter()
+                .any(|v| matches!(v, serde_json::Value::Object(_)))
+            {
                 let result: Vec<serde_json::Value> = arr
                     .into_iter()
                     .filter(|item| match item {
@@ -449,7 +471,9 @@ fn apply_filter_recursive(
 
 /// Returns true when every filter `(key, expected)` is found at any depth within `item`.
 fn item_matches_filters(item: &serde_json::Value, filters: &HashMap<String, String>) -> bool {
-    filters.iter().all(|(key, expected)| json_has_field(item, key, expected))
+    filters
+        .iter()
+        .all(|(key, expected)| json_has_field(item, key, expected))
 }
 
 fn json_has_field(json: &serde_json::Value, key: &str, expected: &str) -> bool {

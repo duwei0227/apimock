@@ -11,31 +11,49 @@ use crate::tui::app::App;
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(5), Constraint::Length(10), Constraint::Length(3)])
+        .constraints([
+            Constraint::Min(5),
+            Constraint::Length(10),
+            Constraint::Length(3),
+        ])
         .split(area);
 
     // ---- mock list ----
-    let rows: Vec<Row> = app.mocks.iter().enumerate().map(|(i, m)| {
-        let enabled_sym = if m.enabled { "●" } else { "○" };
-        let enabled_style = if m.enabled { Style::default().fg(Color::Green) } else { Style::default().fg(Color::Gray) };
-        let style = if i == app.mock_selected {
-            Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-        };
-        let address = app.ports.iter()
-            .find(|p| p.id == m.port_id)
-            .map(|p| format!("{}:{}", app.system_ip, p.port))
-            .unwrap_or_else(|| m.port_id.to_string());
-        Row::new(vec![
-            Cell::from(m.id.to_string()),
-            Cell::from(address),
-            Cell::from(m.method.to_string()),
-            Cell::from(m.path.clone()),
-            Cell::from(m.name.clone()),
-            Cell::from(Span::styled(enabled_sym, enabled_style)),
-        ]).style(style)
-    }).collect();
+    let rows: Vec<Row> = app
+        .mocks
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let enabled_sym = if m.enabled { "●" } else { "○" };
+            let enabled_style = if m.enabled {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            let style = if i == app.mock_selected {
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            let address = app
+                .ports
+                .iter()
+                .find(|p| p.id == m.port_id)
+                .map(|p| format!("{}:{}", app.system_ip, p.port))
+                .unwrap_or_else(|| m.port_id.to_string());
+            Row::new(vec![
+                Cell::from(m.id.to_string()),
+                Cell::from(address),
+                Cell::from(m.method.to_string()),
+                Cell::from(m.path.clone()),
+                Cell::from(m.name.clone()),
+                Cell::from(Span::styled(enabled_sym, enabled_style)),
+            ])
+            .style(style)
+        })
+        .collect();
 
     let table = Table::new(
         rows,
@@ -68,73 +86,117 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     } else {
         "No mock selected".to_owned()
     };
-    let detail_widget = Paragraph::new(detail)
-        .block(Block::default().title(" Detail ").borders(Borders::ALL));
+    let detail_widget =
+        Paragraph::new(detail).block(Block::default().title(" Detail ").borders(Borders::ALL));
     f.render_widget(detail_widget, chunks[1]);
 
     // ---- help ----
     let help = Paragraph::new(Line::from(vec![
         Span::raw(" ↑/↓: navigate  "),
-        Span::styled("n", Style::default().fg(Color::Yellow)), Span::raw(": new  "),
-        Span::styled("e", Style::default().fg(Color::Yellow)), Span::raw(": edit  "),
-        Span::styled("d", Style::default().fg(Color::Red)),    Span::raw(": delete  "),
-        Span::styled("Space", Style::default().fg(Color::Cyan)), Span::raw(": toggle on/off  "),
-        Span::styled("F1", Style::default().fg(Color::Magenta)), Span::raw(": built-in functions "),
+        Span::styled("n", Style::default().fg(Color::Yellow)),
+        Span::raw(": new  "),
+        Span::styled("e", Style::default().fg(Color::Yellow)),
+        Span::raw(": edit  "),
+        Span::styled("d", Style::default().fg(Color::Red)),
+        Span::raw(": delete  "),
+        Span::styled("Space", Style::default().fg(Color::Cyan)),
+        Span::raw(": toggle on/off  "),
+        Span::styled("F1", Style::default().fg(Color::Magenta)),
+        Span::raw(": built-in functions "),
     ]))
     .block(Block::default().borders(Borders::ALL));
     f.render_widget(help, chunks[2]);
 }
 
 const MOCK_LABELS: &[&str] = &[
-    "Port ID *", "Method *", "Path *", "Name *", "Description",
-    "Request Params", "Response Status *", "Delay (ms) *", "Response Headers", "Body Source *",
-    "Response Body / File Path", "Pagination",
-    "Page param", "Page size param", "Data field", "Total field",
+    "Port ID *",
+    "Method *",
+    "Path *",
+    "Name *",
+    "Description",
+    "Request Params",
+    "Response Status *",
+    "Delay (ms) *",
+    "Response Headers",
+    "Body Source *",
+    "Response Body / File Path",
+    "Pagination",
+    "Page param",
+    "Page size param",
+    "Data field",
+    "Total field",
 ];
 
 pub fn draw_modal(f: &mut Frame, app: &mut App) {
-    use ratatui::widgets::Clear;
     use crate::tui::app::{
-        ModalKind, BODY_FIELD_IDX, BODY_SOURCE_FIELD_IDX,
-        HEADER_FIELD_IDX, METHOD_FIELD_IDX, PAGINATION_ENABLED_FIELD_IDX,
-        PAGINATION_PAGE_PARAM_FIELD_IDX, PAGINATION_SIZE_PARAM_FIELD_IDX,
-        PAGINATION_DATA_FIELD_IDX, PAGINATION_TOTAL_FIELD_IDX,
-        PATH_FIELD_IDX, PORT_ID_FIELD_IDX, REQUEST_PARAMS_FIELD_IDX,
+        ModalKind, BODY_FIELD_IDX, BODY_SOURCE_FIELD_IDX, HEADER_FIELD_IDX, METHOD_FIELD_IDX,
+        PAGINATION_DATA_FIELD_IDX, PAGINATION_ENABLED_FIELD_IDX, PAGINATION_PAGE_PARAM_FIELD_IDX,
+        PAGINATION_SIZE_PARAM_FIELD_IDX, PAGINATION_TOTAL_FIELD_IDX, PATH_FIELD_IDX,
+        PORT_ID_FIELD_IDX, REQUEST_PARAMS_FIELD_IDX,
     };
+    use ratatui::widgets::Clear;
 
     fn chips_or_placeholder<'a>(raw: &'a str, placeholder: &'a str) -> Line<'a> {
-        let chips: Vec<&str> = raw.split('|').map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
+        let chips: Vec<&str> = raw
+            .split('|')
+            .map(|p| p.trim())
+            .filter(|p| !p.is_empty())
+            .collect();
         if chips.is_empty() {
-            Line::from(Span::styled(placeholder, Style::default().fg(Color::DarkGray)))
+            Line::from(Span::styled(
+                placeholder,
+                Style::default().fg(Color::DarkGray),
+            ))
         } else {
-            Line::from(chips.iter().map(|p| {
-                Span::styled(format!("[{}]  ", p), Style::default().fg(Color::Cyan))
-            }).collect::<Vec<_>>())
+            Line::from(
+                chips
+                    .iter()
+                    .map(|p| Span::styled(format!("[{}]  ", p), Style::default().fg(Color::Cyan)))
+                    .collect::<Vec<_>>(),
+            )
         }
     }
 
     let is_edit = matches!(app.modal, Some(ModalKind::MockEdit));
 
-    let body_source = app.modal_fields.get(BODY_SOURCE_FIELD_IDX)
+    let body_source = app
+        .modal_fields
+        .get(BODY_SOURCE_FIELD_IDX)
         .map(|s| s.as_str())
         .unwrap_or("Inline");
     let body_inline = body_source == "Inline";
     let body_field_h: u16 = if body_inline { 12 } else { 3 };
 
     let pagination_on = app.pagination_on();
-    let method = app.modal_fields.get(METHOD_FIELD_IDX).map(|s| s.as_str()).unwrap_or("GET");
+    let method = app
+        .modal_fields
+        .get(METHOD_FIELD_IDX)
+        .map(|s| s.as_str())
+        .unwrap_or("GET");
     let hide_params = method == "PUT" || method == "DELETE";
 
     let all_visible: Vec<usize> = (0..MOCK_LABELS.len())
         .filter(|&i| {
-            if i == REQUEST_PARAMS_FIELD_IDX && hide_params { return false; }
-            if matches!(i, PAGINATION_PAGE_PARAM_FIELD_IDX..=PAGINATION_TOTAL_FIELD_IDX) && !pagination_on { return false; }
+            if i == REQUEST_PARAMS_FIELD_IDX && hide_params {
+                return false;
+            }
+            if matches!(
+                i,
+                PAGINATION_PAGE_PARAM_FIELD_IDX..=PAGINATION_TOTAL_FIELD_IDX
+            ) && !pagination_on
+            {
+                return false;
+            }
             true
         })
         .collect();
 
     let field_h = |i: usize| -> u16 {
-        if i == BODY_FIELD_IDX && body_inline { body_field_h } else { 3 }
+        if i == BODY_FIELD_IDX && body_inline {
+            body_field_h
+        } else {
+            3
+        }
     };
 
     // Cap modal height: leave 4 rows for tab bar + frame margins
@@ -144,7 +206,10 @@ pub fn draw_modal(f: &mut Frame, app: &mut App) {
     let available: u16 = max_modal_h.saturating_sub(3);
 
     // Auto-adjust modal_scroll so the active field stays in view
-    let active_pos = all_visible.iter().position(|&i| i == app.modal_field_idx).unwrap_or(0);
+    let active_pos = all_visible
+        .iter()
+        .position(|&i| i == app.modal_field_idx)
+        .unwrap_or(0);
     if app.modal_scroll > active_pos {
         app.modal_scroll = active_pos;
     }
@@ -153,12 +218,18 @@ pub fn draw_modal(f: &mut Frame, app: &mut App) {
         let mut last = app.modal_scroll;
         for pos in app.modal_scroll..all_visible.len() {
             let fh = field_h(all_visible[pos]);
-            if h + fh > available { break; }
+            if h + fh > available {
+                break;
+            }
             h += fh;
             last = pos;
         }
-        if active_pos <= last { break 'fwd; }
-        if app.modal_scroll + 1 >= all_visible.len() { break 'fwd; }
+        if active_pos <= last {
+            break 'fwd;
+        }
+        if app.modal_scroll + 1 >= all_visible.len() {
+            break 'fwd;
+        }
         app.modal_scroll += 1;
     }
 
@@ -168,7 +239,9 @@ pub fn draw_modal(f: &mut Frame, app: &mut App) {
     for pos in app.modal_scroll..all_visible.len() {
         let fi = all_visible[pos];
         let fh = field_h(fi);
-        if total_h + fh > available { break; }
+        if total_h + fh > available {
+            break;
+        }
         render_fields.push(fi);
         total_h += fh;
     }
@@ -180,9 +253,9 @@ pub fn draw_modal(f: &mut Frame, app: &mut App) {
 
     let base_title = if is_edit { " Edit Mock " } else { " New Mock " };
     let title = match (has_above, has_below) {
-        (true,  true)  => format!("{}▲▼", base_title),
-        (true,  false) => format!("{}▲", base_title),
-        (false, true)  => format!("{}▼", base_title),
+        (true, true) => format!("{}▲▼", base_title),
+        (true, false) => format!("{}▲", base_title),
+        (false, true) => format!("{}▼", base_title),
         (false, false) => base_title.to_owned(),
     };
 
@@ -203,7 +276,8 @@ pub fn draw_modal(f: &mut Frame, app: &mut App) {
         .border_style(Style::default().fg(Color::Cyan));
     f.render_widget(block, area);
 
-    let constraints: Vec<Constraint> = render_fields.iter()
+    let constraints: Vec<Constraint> = render_fields
+        .iter()
         .map(|&fi| Constraint::Length(field_h(fi)))
         .chain(std::iter::once(Constraint::Min(1)))
         .collect();
@@ -237,7 +311,11 @@ pub fn draw_modal(f: &mut Frame, app: &mut App) {
         };
 
         let is_active = app.modal_field_idx == fi;
-        let border_style = if is_active { Style::default().fg(Color::Cyan) } else { Style::default() };
+        let border_style = if is_active {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default()
+        };
 
         let effective_label: String = if fi == BODY_FIELD_IDX {
             if !body_inline {
@@ -257,54 +335,105 @@ pub fn draw_modal(f: &mut Frame, app: &mut App) {
                 let cur = app.modal_cursor_pos.min(chars.len());
                 let before: String = chars[..cur].iter().collect();
                 let cursor_ch = chars.get(cur).copied().unwrap_or(' ');
-                let after: String = chars[cur.saturating_add(1).min(chars.len())..].iter().collect();
+                let after: String = chars[cur.saturating_add(1).min(chars.len())..]
+                    .iter()
+                    .collect();
                 let full = format!("{}\x00{}{}", before, cursor_ch, after);
-                let lines: Vec<Line> = full.split('\n').map(|line| {
-                    if let Some(pos) = line.find('\x00') {
-                        let b = &line[..pos];
-                        let c = line[pos+1..].chars().next().unwrap_or(' ');
-                        let a = &line[pos+1..].chars().skip(1).collect::<String>();
-                        Line::from(vec![
-                            Span::raw(b.to_owned()),
-                            Span::styled(c.to_string(), Style::default().add_modifier(Modifier::REVERSED)),
-                            Span::raw(a.clone()),
-                        ])
-                    } else {
-                        Line::from(line.to_owned())
-                    }
-                }).collect();
+                let lines: Vec<Line> = full
+                    .split('\n')
+                    .map(|line| {
+                        if let Some(pos) = line.find('\x00') {
+                            let b = &line[..pos];
+                            let c = line[pos + 1..].chars().next().unwrap_or(' ');
+                            let a = &line[pos + 1..].chars().skip(1).collect::<String>();
+                            Line::from(vec![
+                                Span::raw(b.to_owned()),
+                                Span::styled(
+                                    c.to_string(),
+                                    Style::default().add_modifier(Modifier::REVERSED),
+                                ),
+                                Span::raw(a.clone()),
+                            ])
+                        } else {
+                            Line::from(line.to_owned())
+                        }
+                    })
+                    .collect();
                 Paragraph::new(lines)
                     .wrap(Wrap { trim: false })
                     .scroll((app.modal_body_scroll as u16, 0))
-                    .block(Block::default().title(effective_label.as_str()).borders(Borders::ALL).border_style(border_style))
+                    .block(
+                        Block::default()
+                            .title(effective_label.as_str())
+                            .borders(Borders::ALL)
+                            .border_style(border_style),
+                    )
             } else {
                 let chars: Vec<char> = display.chars().collect();
                 let cur = app.modal_cursor_pos.min(chars.len());
                 let before: String = chars[..cur].iter().collect();
                 let cursor_ch = chars.get(cur).copied().unwrap_or(' ');
-                let after: String = chars[cur.saturating_add(1).min(chars.len())..].iter().collect();
+                let after: String = chars[cur.saturating_add(1).min(chars.len())..]
+                    .iter()
+                    .collect();
                 Paragraph::new(Line::from(vec![
                     Span::raw(before),
-                    Span::styled(cursor_ch.to_string(), Style::default().add_modifier(Modifier::REVERSED)),
+                    Span::styled(
+                        cursor_ch.to_string(),
+                        Style::default().add_modifier(Modifier::REVERSED),
+                    ),
                     Span::raw(after),
                 ]))
-                .block(Block::default().title(effective_label.as_str()).borders(Borders::ALL).border_style(border_style))
+                .block(
+                    Block::default()
+                        .title(effective_label.as_str())
+                        .borders(Borders::ALL)
+                        .border_style(border_style),
+                )
             }
         } else if is_multiline_body {
-            let lines: Vec<Line> = display.split('\n').map(|l| Line::from(l.to_owned())).collect();
+            let lines: Vec<Line> = display
+                .split('\n')
+                .map(|l| Line::from(l.to_owned()))
+                .collect();
             Paragraph::new(lines)
                 .wrap(Wrap { trim: false })
                 .scroll((app.modal_body_scroll as u16, 0))
-                .block(Block::default().title(effective_label.as_str()).borders(Borders::ALL).border_style(border_style))
+                .block(
+                    Block::default()
+                        .title(effective_label.as_str())
+                        .borders(Borders::ALL)
+                        .border_style(border_style),
+                )
         } else if fi == REQUEST_PARAMS_FIELD_IDX && !is_active {
-            Paragraph::new(chips_or_placeholder(raw, "按 + 添加参数名，多个参数用 | 分隔"))
-                .block(Block::default().title(effective_label.as_str()).borders(Borders::ALL).border_style(border_style))
+            Paragraph::new(chips_or_placeholder(
+                raw,
+                "按 + 添加参数名，多个参数用 | 分隔",
+            ))
+            .block(
+                Block::default()
+                    .title(effective_label.as_str())
+                    .borders(Borders::ALL)
+                    .border_style(border_style),
+            )
         } else if fi == HEADER_FIELD_IDX && !is_active {
-            Paragraph::new(chips_or_placeholder(raw, "按 + 添加响应头，格式 Key: Value"))
-                .block(Block::default().title(effective_label.as_str()).borders(Borders::ALL).border_style(border_style))
+            Paragraph::new(chips_or_placeholder(
+                raw,
+                "按 + 添加响应头，格式 Key: Value",
+            ))
+            .block(
+                Block::default()
+                    .title(effective_label.as_str())
+                    .borders(Borders::ALL)
+                    .border_style(border_style),
+            )
         } else {
-            Paragraph::new(Line::from(display))
-                .block(Block::default().title(effective_label.as_str()).borders(Borders::ALL).border_style(border_style))
+            Paragraph::new(Line::from(display)).block(
+                Block::default()
+                    .title(effective_label.as_str())
+                    .borders(Borders::ALL)
+                    .border_style(border_style),
+            )
         };
         f.render_widget(widget, inner[slot]);
     }
@@ -312,13 +441,26 @@ pub fn draw_modal(f: &mut Frame, app: &mut App) {
     let (hint_text, hint_style) = if let Some(err) = &app.modal_error {
         (err.clone(), Style::default().fg(Color::Red))
     } else if app.cancel_confirm_pending {
-        ("Discard changes?  Enter: yes  Esc: no".to_owned(), Style::default().fg(Color::Yellow))
+        (
+            "Discard changes?  Enter: yes  Esc: no".to_owned(),
+            Style::default().fg(Color::Yellow),
+        )
     } else if app.modal_field_idx == BODY_SOURCE_FIELD_IDX {
-        ("←/→: select  Tab: next  Shift+Tab: back".to_owned(), Style::default().fg(Color::DarkGray))
+        (
+            "←/→: select  Tab: next  Shift+Tab: back".to_owned(),
+            Style::default().fg(Color::DarkGray),
+        )
     } else if app.modal_field_idx == PORT_ID_FIELD_IDX || app.modal_field_idx == METHOD_FIELD_IDX {
-        ("←/→: select  Tab: next  Shift+Tab: back  Enter: save  Esc: cancel".to_owned(), Style::default().fg(Color::DarkGray))
+        (
+            "←/→: select  Tab: next  Shift+Tab: back  Enter: save  Esc: cancel".to_owned(),
+            Style::default().fg(Color::DarkGray),
+        )
     } else if app.modal_field_idx == BODY_FIELD_IDX && body_inline {
-        ("↑/↓: scroll body  Ctrl+U: clear  Tab: next  Shift+Tab: back  Enter: save  Esc: cancel".to_owned(), Style::default().fg(Color::DarkGray))
+        (
+            "↑/↓: scroll body  Ctrl+U: clear  Tab: next  Shift+Tab: back  Enter: save  Esc: cancel"
+                .to_owned(),
+            Style::default().fg(Color::DarkGray),
+        )
     } else if app.modal_field_idx == BODY_FIELD_IDX && !body_inline {
         ("Enter full file path (e.g. /home/user/data.json)  Tab: next  Shift+Tab: back  Enter: save  Esc: cancel".to_owned(), Style::default().fg(Color::DarkGray))
     } else if app.modal_field_idx == PATH_FIELD_IDX {
@@ -326,9 +468,16 @@ pub fn draw_modal(f: &mut Frame, app: &mut App) {
     } else if app.modal_field_idx == REQUEST_PARAMS_FIELD_IDX {
         ("+: 新增参数  Tab: 下一项  Shift+Tab: 上一项  Enter: 保存 — 添加后，JSON 响应将按参数值过滤（如 ?name=john），非 JSON 不受影响".to_owned(), Style::default().fg(Color::DarkGray))
     } else if app.modal_field_idx == PAGINATION_PAGE_PARAM_FIELD_IDX {
-        ("页码参数名，留空默认 page  Tab: 下一项  Shift+Tab: 上一项  Enter: 保存".to_owned(), Style::default().fg(Color::DarkGray))
+        (
+            "页码参数名，留空默认 page  Tab: 下一项  Shift+Tab: 上一项  Enter: 保存".to_owned(),
+            Style::default().fg(Color::DarkGray),
+        )
     } else if app.modal_field_idx == PAGINATION_SIZE_PARAM_FIELD_IDX {
-        ("页大小参数名，留空默认 pageSize（未传时每页 10 条）  Tab: 下一项  Enter: 保存".to_owned(), Style::default().fg(Color::DarkGray))
+        (
+            "页大小参数名，留空默认 pageSize（未传时每页 10 条）  Tab: 下一项  Enter: 保存"
+                .to_owned(),
+            Style::default().fg(Color::DarkGray),
+        )
     } else if app.modal_field_idx == PAGINATION_DATA_FIELD_IDX {
         ("数组字段路径，支持点号路径（如 body.list），留空表示顶层数组  Tab: 下一项  Enter: 保存".to_owned(), Style::default().fg(Color::DarkGray))
     } else if app.modal_field_idx == PAGINATION_TOTAL_FIELD_IDX {
@@ -337,11 +486,15 @@ pub fn draw_modal(f: &mut Frame, app: &mut App) {
         let text = if let Some(sug) = app.header_autocomplete_suggestion() {
             format!("+: 新增  →: \"{}\"  格式 Key: Value，多个用 |  Tab: 下一项  Shift+Tab: 上一项  Enter: 保存", sug)
         } else {
-            "+: 新增响应头  格式 Key: Value，多个用 |  Tab: 下一项  Shift+Tab: 上一项  Enter: 保存".to_owned()
+            "+: 新增响应头  格式 Key: Value，多个用 |  Tab: 下一项  Shift+Tab: 上一项  Enter: 保存"
+                .to_owned()
         };
         (text, Style::default().fg(Color::DarkGray))
     } else {
-        ("Tab: next  Shift+Tab: back  Enter: save  Esc: cancel".to_owned(), Style::default().fg(Color::DarkGray))
+        (
+            "Tab: next  Shift+Tab: back  Enter: save  Esc: cancel".to_owned(),
+            Style::default().fg(Color::DarkGray),
+        )
     };
     let hint = Paragraph::new(hint_text.as_str()).style(hint_style);
     if let Some(last) = inner.last() {

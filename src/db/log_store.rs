@@ -120,7 +120,11 @@ impl LogStore for SqliteLogStore {
     }
 
     async fn list_request_logs(&self, query: LogQuery) -> Result<LogPage<RequestLog>> {
-        let page_size = if query.page_size == 0 { 50 } else { query.page_size };
+        let page_size = if query.page_size == 0 {
+            50
+        } else {
+            query.page_size
+        };
         let offset = query.page * page_size;
 
         self.conn
@@ -172,8 +176,7 @@ impl LogStore for SqliteLogStore {
                 let count_sql = format!("SELECT COUNT(*) FROM request_logs {}", where_clause);
                 let count_refs: Vec<&dyn rusqlite::ToSql> =
                     count_params.iter().map(|b| b.as_ref()).collect();
-                let total: i64 =
-                    conn.query_row(&count_sql, count_refs.as_slice(), |r| r.get(0))?;
+                let total: i64 = conn.query_row(&count_sql, count_refs.as_slice(), |r| r.get(0))?;
 
                 let n_data = data_params.len();
                 let data_sql = format!(
@@ -252,7 +255,11 @@ impl LogStore for SqliteLogStore {
     }
 
     async fn list_system_logs(&self, query: LogQuery) -> Result<LogPage<SystemLog>> {
-        let page_size = if query.page_size == 0 { 50 } else { query.page_size };
+        let page_size = if query.page_size == 0 {
+            50
+        } else {
+            query.page_size
+        };
         let offset = query.page * page_size;
 
         self.conn
@@ -288,8 +295,7 @@ impl LogStore for SqliteLogStore {
                 let count_sql = format!("SELECT COUNT(*) FROM system_logs {}", where_clause);
                 let count_refs: Vec<&dyn rusqlite::ToSql> =
                     count_params.iter().map(|b| b.as_ref()).collect();
-                let total: i64 =
-                    conn.query_row(&count_sql, count_refs.as_slice(), |r| r.get(0))?;
+                let total: i64 = conn.query_row(&count_sql, count_refs.as_slice(), |r| r.get(0))?;
 
                 let n_data = data_params.len();
                 let data_sql = format!(

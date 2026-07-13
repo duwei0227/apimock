@@ -47,14 +47,20 @@ fn build_router(state: AppState) -> Router {
         .route("/me/default-tenant", put(auth_routes::set_default_tenant));
 
     let admin_api = Router::new()
-        .route("/tenants", get(admin_tenants::list_tenants).post(admin_tenants::create_tenant))
+        .route(
+            "/tenants",
+            get(admin_tenants::list_tenants).post(admin_tenants::create_tenant),
+        )
         .route(
             "/tenants/:id",
             get(admin_tenants::get_tenant)
                 .put(admin_tenants::update_tenant)
                 .delete(admin_tenants::delete_tenant),
         )
-        .route("/users", get(admin_users::list_users).post(admin_users::create_user))
+        .route(
+            "/users",
+            get(admin_users::list_users).post(admin_users::create_user),
+        )
         .route(
             "/users/:id",
             get(admin_users::get_user)
@@ -63,12 +69,18 @@ fn build_router(state: AppState) -> Router {
         )
         .route("/users/:id/disable", post(admin_users::disable_user))
         .route("/users/:id/enable", post(admin_users::enable_user))
-        .route("/users/:id/reset-password", post(admin_users::reset_password))
+        .route(
+            "/users/:id/reset-password",
+            post(admin_users::reset_password),
+        )
         .route(
             "/users/:id/tenants",
             get(admin_users::list_user_tenants).post(admin_users::assign_tenant),
         )
-        .route("/users/:id/tenants/:tenant_id", delete(admin_users::remove_tenant));
+        .route(
+            "/users/:id/tenants/:tenant_id",
+            delete(admin_users::remove_tenant),
+        );
 
     let api = Router::new()
         .route("/info", get(info::get_info))

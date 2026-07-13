@@ -31,68 +31,98 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     let desc = Paragraph::new(vec![
         Line::from(vec![
             Span::raw("Use "),
-            Span::styled("{{function}}", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "{{function}}",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" or "),
-            Span::styled("{{function:arg}}", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "{{function:arg}}",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" in the Response Body field of a Mock."),
         ]),
-        Line::from(vec![
-            Span::styled(
-                "Placeholders are evaluated on every incoming request.",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]),
+        Line::from(vec![Span::styled(
+            "Placeholders are evaluated on every incoming request.",
+            Style::default().fg(Color::DarkGray),
+        )]),
     ])
     .alignment(Alignment::Center);
     f.render_widget(desc, chunks[0]);
 
     // Separator
-    let sep = Paragraph::new(Line::from(
-        "─".repeat(inner.width as usize),
-    ))
-    .style(Style::default().fg(Color::DarkGray));
+    let sep = Paragraph::new(Line::from("─".repeat(inner.width as usize)))
+        .style(Style::default().fg(Color::DarkGray));
     f.render_widget(sep, chunks[1]);
 
     // Table
     let header = Row::new(vec![
-        Cell::from("Function")
-            .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED).fg(Color::Cyan)),
-        Cell::from("Syntax")
-            .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED).fg(Color::Cyan)),
-        Cell::from("Default")
-            .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED).fg(Color::Cyan)),
-        Cell::from("Description")
-            .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED).fg(Color::Cyan)),
-        Cell::from("Example output")
-            .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED).fg(Color::Cyan)),
+        Cell::from("Function").style(
+            Style::default()
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                .fg(Color::Cyan),
+        ),
+        Cell::from("Syntax").style(
+            Style::default()
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                .fg(Color::Cyan),
+        ),
+        Cell::from("Default").style(
+            Style::default()
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                .fg(Color::Cyan),
+        ),
+        Cell::from("Description").style(
+            Style::default()
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                .fg(Color::Cyan),
+        ),
+        Cell::from("Example output").style(
+            Style::default()
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                .fg(Color::Cyan),
+        ),
     ])
     .height(1);
 
-    let rows: Vec<Row> = FUNCTIONS.iter().enumerate().map(|(i, fn_doc)| {
-        let bg = if i % 2 == 0 { Color::Reset } else { Color::Rgb(28, 28, 40) };
-        Row::new(vec![
-            Cell::from(Span::styled(
-                fn_doc.name,
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(Span::styled(
-                fn_doc.syntax,
-                Style::default().fg(Color::White),
-            )),
-            Cell::from(Span::styled(
-                fn_doc.default_args,
-                Style::default().fg(Color::DarkGray),
-            )),
-            Cell::from(fn_doc.description),
-            Cell::from(Span::styled(
-                fn_doc.example_output,
-                Style::default().fg(Color::Green),
-            )),
-        ])
-        .style(Style::default().bg(bg))
-        .height(1)
-    })
-    .collect();
+    let rows: Vec<Row> = FUNCTIONS
+        .iter()
+        .enumerate()
+        .map(|(i, fn_doc)| {
+            let bg = if i % 2 == 0 {
+                Color::Reset
+            } else {
+                Color::Rgb(28, 28, 40)
+            };
+            Row::new(vec![
+                Cell::from(Span::styled(
+                    fn_doc.name,
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Cell::from(Span::styled(
+                    fn_doc.syntax,
+                    Style::default().fg(Color::White),
+                )),
+                Cell::from(Span::styled(
+                    fn_doc.default_args,
+                    Style::default().fg(Color::DarkGray),
+                )),
+                Cell::from(fn_doc.description),
+                Cell::from(Span::styled(
+                    fn_doc.example_output,
+                    Style::default().fg(Color::Green),
+                )),
+            ])
+            .style(Style::default().bg(bg))
+            .height(1)
+        })
+        .collect();
 
     let table = Table::new(
         rows,
@@ -118,7 +148,11 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
         hint("[q]", "quit"),
     ]))
     .alignment(Alignment::Center)
-    .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(Color::DarkGray)));
+    .block(
+        Block::default()
+            .borders(Borders::TOP)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(footer, chunks[3]);
 }
 

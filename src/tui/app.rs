@@ -49,7 +49,11 @@ fn parse_headers(s: &str) -> HashMap<String, String> {
             let mut parts = pair.splitn(2, ':');
             let key = parts.next()?.trim().to_owned();
             let val = parts.next()?.trim().to_owned();
-            if key.is_empty() { None } else { Some((key, val)) }
+            if key.is_empty() {
+                None
+            } else {
+                Some((key, val))
+            }
         })
         .collect()
 }
@@ -77,28 +81,37 @@ fn format_param_names(h: &HashMap<String, String>) -> String {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
-    Ports     = 0,
-    Mocks     = 1,
-    Logs      = 2,
+    Ports = 0,
+    Mocks = 1,
+    Logs = 2,
     Functions = 3,
 }
 
 impl Tab {
     pub fn next(self) -> Self {
         match self {
-            Tab::Ports     => Tab::Mocks,
-            Tab::Mocks     => Tab::Logs,
-            Tab::Logs      => Tab::Functions,
+            Tab::Ports => Tab::Mocks,
+            Tab::Mocks => Tab::Logs,
+            Tab::Logs => Tab::Functions,
             Tab::Functions => Tab::Ports,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LogTab { Request, System }
+pub enum LogTab {
+    Request,
+    System,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModalKind { PortCreate, PortEdit, MockCreate, MockEdit, Confirm }
+pub enum ModalKind {
+    PortCreate,
+    PortEdit,
+    MockCreate,
+    MockEdit,
+    Confirm,
+}
 
 pub struct App {
     pub state: AppState,
@@ -119,7 +132,7 @@ pub struct App {
     pub request_logs: Vec<RequestLog>,
     pub system_logs: Vec<SystemLog>,
     pub request_log_state: TableState,
-    pub system_log_state:  TableState,
+    pub system_log_state: TableState,
     pub log_detail_open: bool,
     pub log_detail_scroll: usize,
 
@@ -156,7 +169,8 @@ impl App {
             let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
             socket.connect("8.8.8.8:80").ok()?;
             Some(socket.local_addr().ok()?.ip().to_string())
-        })().unwrap_or_else(|| "unknown".to_string());
+        })()
+        .unwrap_or_else(|| "unknown".to_string());
         Self {
             state,
             active_tab: Tab::Ports,
@@ -170,7 +184,7 @@ impl App {
             request_logs: Vec::new(),
             system_logs: Vec::new(),
             request_log_state: TableState::default(),
-            system_log_state:  TableState::default(),
+            system_log_state: TableState::default(),
             log_detail_open: false,
             log_detail_scroll: 0,
             modal: None,
@@ -217,9 +231,11 @@ impl App {
         // Down = toward older entries (higher index in newest-first storage).
         let (len, state) = match self.log_tab {
             LogTab::Request => (self.request_logs.len(), &mut self.request_log_state),
-            LogTab::System  => (self.system_logs.len(),  &mut self.system_log_state),
+            LogTab::System => (self.system_logs.len(), &mut self.system_log_state),
         };
-        if len == 0 { return; }
+        if len == 0 {
+            return;
+        }
         let next = state.selected().map(|i| (i + 1).min(len - 1)).unwrap_or(0);
         state.select(Some(next));
     }
@@ -228,7 +244,7 @@ impl App {
         // Up = toward newer entries (lower index in newest-first storage).
         let state = match self.log_tab {
             LogTab::Request => &mut self.request_log_state,
-            LogTab::System  => &mut self.system_log_state,
+            LogTab::System => &mut self.system_log_state,
         };
         let prev = state.selected().map(|i| i.saturating_sub(1)).unwrap_or(0);
         state.select(Some(prev));
@@ -236,20 +252,28 @@ impl App {
 
     pub fn snap_to_follow(&mut self) {
         // Newest-first storage: row 0 is always the newest entry.
-        if !self.request_logs.is_empty() { self.request_log_state.select(Some(0)); }
-        if !self.system_logs.is_empty()  { self.system_log_state.select(Some(0)); }
+        if !self.request_logs.is_empty() {
+            self.request_log_state.select(Some(0));
+        }
+        if !self.system_logs.is_empty() {
+            self.system_log_state.select(Some(0));
+        }
     }
 
     pub fn push_log_event(&mut self, ev: LogEvent) {
         match ev {
             LogEvent::Request(r) => {
                 self.request_logs.insert(0, r);
-                if self.request_logs.len() > 500 { self.request_logs.truncate(500); }
+                if self.request_logs.len() > 500 {
+                    self.request_logs.truncate(500);
+                }
                 self.request_log_state.select(Some(0));
             }
             LogEvent::System(s) => {
                 self.system_logs.insert(0, s);
-                if self.system_logs.len() > 500 { self.system_logs.truncate(500); }
+                if self.system_logs.len() > 500 {
+                    self.system_logs.truncate(500);
+                }
                 self.system_log_state.select(Some(0));
             }
             LogEvent::StateChanged { .. } => {}
@@ -257,12 +281,19 @@ impl App {
     }
 
     pub fn cycle_port_field(&mut self, forward: bool) {
-        if self.ports.is_empty() { return; }
-        let current_id: i64 = self.modal_fields
+        if self.ports.is_empty() {
+            return;
+        }
+        let current_id: i64 = self
+            .modal_fields
             .get(PORT_ID_FIELD_IDX)
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
-        let pos = self.ports.iter().position(|p| p.id == current_id).unwrap_or(0);
+        let pos = self
+            .ports
+            .iter()
+            .position(|p| p.id == current_id)
+            .unwrap_or(0);
         let next = if forward {
             (pos + 1) % self.ports.len()
         } else {
@@ -275,7 +306,10 @@ impl App {
 
     pub fn cycle_method_field(&mut self, forward: bool) {
         if let Some(current) = self.modal_fields.get(METHOD_FIELD_IDX) {
-            let pos = HTTP_METHODS.iter().position(|&m| m == current.as_str()).unwrap_or(0);
+            let pos = HTTP_METHODS
+                .iter()
+                .position(|&m| m == current.as_str())
+                .unwrap_or(0);
             let next = if forward {
                 (pos + 1) % HTTP_METHODS.len()
             } else {
@@ -309,10 +343,13 @@ impl App {
     pub fn header_autocomplete_suggestion(&self) -> Option<&'static str> {
         let current = self.modal_fields.get(HEADER_FIELD_IDX)?;
         let prefix = current.rsplit(" | ").next().unwrap_or(current.as_str());
-        if prefix.is_empty() { return None; }
-        COMMON_HEADERS.iter().find(|&&h| {
-            h.to_lowercase().starts_with(&prefix.to_lowercase())
-        }).copied()
+        if prefix.is_empty() {
+            return None;
+        }
+        COMMON_HEADERS
+            .iter()
+            .find(|&&h| h.to_lowercase().starts_with(&prefix.to_lowercase()))
+            .copied()
     }
 
     pub fn accept_header_autocomplete(&mut self) {
@@ -330,7 +367,10 @@ impl App {
 
     pub fn cycle_body_source_field(&mut self, forward: bool) {
         if let Some(current) = self.modal_fields.get(BODY_SOURCE_FIELD_IDX) {
-            let pos = BODY_SOURCES.iter().position(|&s| s == current.as_str()).unwrap_or(0);
+            let pos = BODY_SOURCES
+                .iter()
+                .position(|&s| s == current.as_str())
+                .unwrap_or(0);
             let next = if forward {
                 (pos + 1) % BODY_SOURCES.len()
             } else {
@@ -343,19 +383,29 @@ impl App {
     }
 
     pub fn pagination_on(&self) -> bool {
-        self.modal_fields.get(PAGINATION_ENABLED_FIELD_IDX)
+        self.modal_fields
+            .get(PAGINATION_ENABLED_FIELD_IDX)
             .map(|s| s == "On")
             .unwrap_or(false)
     }
 
     /// Returns true if the given modal field index should be hidden given the current state.
     pub fn is_mock_field_hidden(&self, fi: usize) -> bool {
-        if self.modal_fields.len() < 12 { return false; }
+        if self.modal_fields.len() < 12 {
+            return false;
+        }
         if fi == REQUEST_PARAMS_FIELD_IDX {
-            let method = self.modal_fields.get(METHOD_FIELD_IDX).map(|s| s.as_str()).unwrap_or("GET");
+            let method = self
+                .modal_fields
+                .get(METHOD_FIELD_IDX)
+                .map(|s| s.as_str())
+                .unwrap_or("GET");
             return method == "PUT" || method == "DELETE";
         }
-        if matches!(fi, PAGINATION_PAGE_PARAM_FIELD_IDX..=PAGINATION_TOTAL_FIELD_IDX) {
+        if matches!(
+            fi,
+            PAGINATION_PAGE_PARAM_FIELD_IDX..=PAGINATION_TOTAL_FIELD_IDX
+        ) {
             return !self.pagination_on();
         }
         false
@@ -363,7 +413,10 @@ impl App {
 
     pub fn cycle_bool_field(&mut self, idx: usize, forward: bool) {
         if let Some(current) = self.modal_fields.get(idx) {
-            let pos = BOOL_OPTIONS.iter().position(|&s| s == current.as_str()).unwrap_or(0);
+            let pos = BOOL_OPTIONS
+                .iter()
+                .position(|&s| s == current.as_str())
+                .unwrap_or(0);
             let next = if forward {
                 (pos + 1) % BOOL_OPTIONS.len()
             } else {
@@ -377,14 +430,18 @@ impl App {
 
     pub fn open_mock_create(&mut self) {
         self.modal = Some(ModalKind::MockCreate);
-        let port_id = self.ports.first().map(|p| p.id.to_string()).unwrap_or_default();
+        let port_id = self
+            .ports
+            .first()
+            .map(|p| p.id.to_string())
+            .unwrap_or_default();
         self.modal_fields = vec![
             port_id,
             "GET".into(),
             "/".into(),
             String::new(),
             String::new(),
-            String::new(),     // request_params
+            String::new(), // request_params
             "200".into(),
             "0".into(),
             String::new(),
@@ -405,7 +462,10 @@ impl App {
         if let Some(m) = self.selected_mock().cloned() {
             self.modal = Some(ModalKind::MockEdit);
             let (body_source, body) = if m.response_body.starts_with("file://") {
-                ("File".to_owned(), m.response_body["file://".len()..].to_owned())
+                (
+                    "File".to_owned(),
+                    m.response_body["file://".len()..].to_owned(),
+                )
             } else {
                 ("Inline".to_owned(), m.response_body.clone())
             };
@@ -421,7 +481,11 @@ impl App {
                 format_headers(&m.response_headers),
                 body_source,
                 body,
-                if m.pagination_enabled { "On".into() } else { "Off".into() },
+                if m.pagination_enabled {
+                    "On".into()
+                } else {
+                    "Off".into()
+                },
                 m.pagination_page_param.clone(),
                 m.pagination_size_param.clone(),
                 m.pagination_data_field.clone(),
@@ -435,12 +499,17 @@ impl App {
 
     pub fn modal_field_next(&mut self) {
         let len = self.modal_fields.len();
-        if len == 0 { return; }
+        if len == 0 {
+            return;
+        }
         for _ in 0..len {
             self.modal_field_idx = (self.modal_field_idx + 1) % len;
-            if !self.is_mock_field_hidden(self.modal_field_idx) { break; }
+            if !self.is_mock_field_hidden(self.modal_field_idx) {
+                break;
+            }
         }
-        self.modal_cursor_pos = self.modal_fields
+        self.modal_cursor_pos = self
+            .modal_fields
             .get(self.modal_field_idx)
             .map(|f| f.chars().count())
             .unwrap_or(0);
@@ -448,12 +517,17 @@ impl App {
 
     pub fn modal_field_prev(&mut self) {
         let len = self.modal_fields.len();
-        if len == 0 { return; }
+        if len == 0 {
+            return;
+        }
         for _ in 0..len {
             self.modal_field_idx = (self.modal_field_idx + len - 1) % len;
-            if !self.is_mock_field_hidden(self.modal_field_idx) { break; }
+            if !self.is_mock_field_hidden(self.modal_field_idx) {
+                break;
+            }
         }
-        self.modal_cursor_pos = self.modal_fields
+        self.modal_cursor_pos = self
+            .modal_fields
             .get(self.modal_field_idx)
             .map(|f| f.chars().count())
             .unwrap_or(0);
@@ -463,7 +537,11 @@ impl App {
         if let Some(field) = self.modal_fields.get_mut(self.modal_field_idx) {
             let char_count = field.chars().count();
             let pos = self.modal_cursor_pos.min(char_count);
-            let byte_pos = field.char_indices().nth(pos).map(|(i, _)| i).unwrap_or(field.len());
+            let byte_pos = field
+                .char_indices()
+                .nth(pos)
+                .map(|(i, _)| i)
+                .unwrap_or(field.len());
             field.insert(byte_pos, c);
             self.modal_cursor_pos = pos + 1;
         }
@@ -494,7 +572,11 @@ impl App {
         if let Some(field) = self.modal_fields.get_mut(self.modal_field_idx) {
             let char_count = field.chars().count();
             let pos = self.modal_cursor_pos.min(char_count);
-            let byte_pos = field.char_indices().nth(pos).map(|(i, _)| i).unwrap_or(field.len());
+            let byte_pos = field
+                .char_indices()
+                .nth(pos)
+                .map(|(i, _)| i)
+                .unwrap_or(field.len());
             field.insert_str(byte_pos, &cleaned);
             self.modal_cursor_pos = pos + cleaned.chars().count();
         }
@@ -520,8 +602,14 @@ impl App {
     }
 
     pub fn modal_auto_scroll_body(&mut self) {
-        if self.modal_field_idx != BODY_FIELD_IDX { return; }
-        let field = self.modal_fields.get(self.modal_field_idx).map(|s| s.as_str()).unwrap_or("");
+        if self.modal_field_idx != BODY_FIELD_IDX {
+            return;
+        }
+        let field = self
+            .modal_fields
+            .get(self.modal_field_idx)
+            .map(|s| s.as_str())
+            .unwrap_or("");
         let chars: Vec<char> = field.chars().collect();
         let cur = self.modal_cursor_pos.min(chars.len());
         let cursor_line = chars[..cur].iter().filter(|&&c| c == '\n').count();
@@ -556,7 +644,11 @@ impl App {
     }
 
     pub fn validate_mock_modal(&self) -> Option<String> {
-        let path = self.modal_fields.get(PATH_FIELD_IDX).map(|s| s.as_str()).unwrap_or("");
+        let path = self
+            .modal_fields
+            .get(PATH_FIELD_IDX)
+            .map(|s| s.as_str())
+            .unwrap_or("");
         if path.is_empty() {
             return Some("Path is required".to_owned());
         }
@@ -564,8 +656,16 @@ impl App {
         if name.is_empty() {
             return Some("Name is required".to_owned());
         }
-        let body_source = self.modal_fields.get(BODY_SOURCE_FIELD_IDX).map(|s| s.as_str()).unwrap_or("Inline");
-        let body = self.modal_fields.get(BODY_FIELD_IDX).map(|s| s.as_str()).unwrap_or("");
+        let body_source = self
+            .modal_fields
+            .get(BODY_SOURCE_FIELD_IDX)
+            .map(|s| s.as_str())
+            .unwrap_or("Inline");
+        let body = self
+            .modal_fields
+            .get(BODY_FIELD_IDX)
+            .map(|s| s.as_str())
+            .unwrap_or("");
         if body_source == "File" && body.is_empty() {
             return Some("File path is required when Body Source is File".to_owned());
         }
@@ -575,7 +675,9 @@ impl App {
     /// Build a CreateMockRequest from current modal fields.
     pub fn build_create_mock(&self) -> Option<CreateMockRequest> {
         let f = &self.modal_fields;
-        if f.len() < 11 { return None; }
+        if f.len() < 11 {
+            return None;
+        }
         use crate::models::HttpMethod;
         use std::str::FromStr;
         let response_body = encode_body_field(&f[9], &f[10]);
@@ -592,14 +694,29 @@ impl App {
             response_delay_ms: f[7].parse().unwrap_or(0),
             response_headers: parse_headers(&f[8]),
             response_body,
-            pagination_enabled: f.get(PAGINATION_ENABLED_FIELD_IDX).map(|s| s == "On").unwrap_or(false),
+            pagination_enabled: f
+                .get(PAGINATION_ENABLED_FIELD_IDX)
+                .map(|s| s == "On")
+                .unwrap_or(false),
             pagination_page_size: 10,
-            pagination_page_param: f.get(PAGINATION_PAGE_PARAM_FIELD_IDX)
-                .filter(|s| !s.is_empty()).cloned().unwrap_or_else(|| "page".into()),
-            pagination_size_param: f.get(PAGINATION_SIZE_PARAM_FIELD_IDX)
-                .filter(|s| !s.is_empty()).cloned().unwrap_or_else(|| "pageSize".into()),
-            pagination_data_field: f.get(PAGINATION_DATA_FIELD_IDX).cloned().unwrap_or_default(),
-            pagination_total_field: f.get(PAGINATION_TOTAL_FIELD_IDX).cloned().unwrap_or_default(),
+            pagination_page_param: f
+                .get(PAGINATION_PAGE_PARAM_FIELD_IDX)
+                .filter(|s| !s.is_empty())
+                .cloned()
+                .unwrap_or_else(|| "page".into()),
+            pagination_size_param: f
+                .get(PAGINATION_SIZE_PARAM_FIELD_IDX)
+                .filter(|s| !s.is_empty())
+                .cloned()
+                .unwrap_or_else(|| "pageSize".into()),
+            pagination_data_field: f
+                .get(PAGINATION_DATA_FIELD_IDX)
+                .cloned()
+                .unwrap_or_default(),
+            pagination_total_field: f
+                .get(PAGINATION_TOTAL_FIELD_IDX)
+                .cloned()
+                .unwrap_or_default(),
         })
     }
 
@@ -608,8 +725,10 @@ impl App {
         use crate::models::HttpMethod;
         use std::str::FromStr;
         let response_body = if f.len() >= 11 {
-            Some(encode_body_field(f.get(9).map(|s| s.as_str()).unwrap_or("Inline"),
-                                   f.get(10).map(|s| s.as_str()).unwrap_or("")))
+            Some(encode_body_field(
+                f.get(9).map(|s| s.as_str()).unwrap_or("Inline"),
+                f.get(10).map(|s| s.as_str()).unwrap_or(""),
+            ))
         } else {
             f.get(10).cloned()
         };
@@ -618,7 +737,9 @@ impl App {
             path: f.get(2).cloned(),
             name: f.get(3).cloned(),
             description: f.get(4).cloned(),
-            request_params: f.get(REQUEST_PARAMS_FIELD_IDX).map(|s| parse_param_names(s)),
+            request_params: f
+                .get(REQUEST_PARAMS_FIELD_IDX)
+                .map(|s| parse_param_names(s)),
             response_status: f.get(6).and_then(|s| s.parse().ok()),
             response_delay_ms: f.get(7).and_then(|s| s.parse().ok()),
             response_headers: f.get(8).map(|s| parse_headers(s)),

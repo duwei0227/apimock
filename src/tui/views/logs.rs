@@ -12,35 +12,52 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // tabs
-            Constraint::Min(5),     // log table
-            Constraint::Length(3),  // help
+            Constraint::Length(3), // tabs
+            Constraint::Min(5),    // log table
+            Constraint::Length(3), // help
         ])
         .split(area);
 
     // ---- tab bar ----
     let tab_titles = ["Requests", "System"];
-    let active_idx = match app.log_tab { LogTab::Request => 0, LogTab::System => 1 };
-    let tabs = Tabs::new(tab_titles.iter().map(|t| Line::from(*t)).collect::<Vec<_>>())
-        .select(active_idx)
-        .block(Block::default().borders(Borders::ALL))
-        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+    let active_idx = match app.log_tab {
+        LogTab::Request => 0,
+        LogTab::System => 1,
+    };
+    let tabs = Tabs::new(
+        tab_titles
+            .iter()
+            .map(|t| Line::from(*t))
+            .collect::<Vec<_>>(),
+    )
+    .select(active_idx)
+    .block(Block::default().borders(Borders::ALL))
+    .highlight_style(
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    );
     f.render_widget(tabs, chunks[0]);
 
     // ---- log table ----
     match app.log_tab {
         LogTab::Request => draw_request_logs(f, app, chunks[1]),
-        LogTab::System  => draw_system_logs(f, app, chunks[1]),
+        LogTab::System => draw_system_logs(f, app, chunks[1]),
     }
 
     // ---- help ----
     let help = Paragraph::new(Line::from(vec![
         Span::raw(" ↑/↓: scroll  "),
-        Span::styled("r", Style::default().fg(Color::Yellow)), Span::raw(": requests  "),
-        Span::styled("s", Style::default().fg(Color::Yellow)), Span::raw(": system  "),
-        Span::styled("c", Style::default().fg(Color::Red)), Span::raw(": clear  "),
-        Span::styled("Enter", Style::default().fg(Color::Yellow)), Span::raw(": detail  "),
-        Span::styled("Esc", Style::default().fg(Color::DarkGray)), Span::raw(": close detail"),
+        Span::styled("r", Style::default().fg(Color::Yellow)),
+        Span::raw(": requests  "),
+        Span::styled("s", Style::default().fg(Color::Yellow)),
+        Span::raw(": system  "),
+        Span::styled("c", Style::default().fg(Color::Red)),
+        Span::raw(": clear  "),
+        Span::styled("Enter", Style::default().fg(Color::Yellow)),
+        Span::raw(": detail  "),
+        Span::styled("Esc", Style::default().fg(Color::DarkGray)),
+        Span::raw(": close detail"),
     ]))
     .block(Block::default().borders(Borders::ALL));
     f.render_widget(help, chunks[2]);
@@ -57,9 +74,10 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 fn draw_request_logs(f: &mut Frame, app: &App, area: Rect) {
     // 2 border lines + 1 header + 1 header underline margin = 4 overhead lines
     let visible = area.height.saturating_sub(4) as usize;
-    let sel     = app.request_log_state.selected().unwrap_or(0);
+    let sel = app.request_log_state.selected().unwrap_or(0);
 
-    let rows: Vec<Row> = app.request_logs
+    let rows: Vec<Row> = app
+        .request_logs
         .iter()
         .enumerate()
         .take(visible + 1)
@@ -70,7 +88,9 @@ fn draw_request_logs(f: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(Color::Red)
             };
             let row_style = if abs_i == sel {
-                Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
@@ -101,31 +121,40 @@ fn draw_request_logs(f: &mut Frame, app: &App, area: Rect) {
         ],
     )
     .header(
-        Row::new(vec!["Time", "Port", "IP", "Method", "Path", "Status", "Duration"])
-            .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+        Row::new(vec![
+            "Time", "Port", "IP", "Method", "Path", "Status", "Duration",
+        ])
+        .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
     )
-    .block(Block::default().title(" Request Logs ").borders(Borders::ALL));
+    .block(
+        Block::default()
+            .title(" Request Logs ")
+            .borders(Borders::ALL),
+    );
 
     f.render_widget(table, area);
 }
 
 fn draw_system_logs(f: &mut Frame, app: &App, area: Rect) {
     let visible = area.height.saturating_sub(4) as usize;
-    let sel     = app.system_log_state.selected().unwrap_or(0);
+    let sel = app.system_log_state.selected().unwrap_or(0);
 
-    let rows: Vec<Row> = app.system_logs
+    let rows: Vec<Row> = app
+        .system_logs
         .iter()
         .enumerate()
         .take(visible + 1)
         .map(|(abs_i, s)| {
             let level_style = match s.level.as_str() {
                 "ERROR" => Style::default().fg(Color::Red),
-                "WARN"  => Style::default().fg(Color::Yellow),
-                "INFO"  => Style::default().fg(Color::Cyan),
-                _       => Style::default().fg(Color::DarkGray),
+                "WARN" => Style::default().fg(Color::Yellow),
+                "INFO" => Style::default().fg(Color::Cyan),
+                _ => Style::default().fg(Color::DarkGray),
             };
             let row_style = if abs_i == sel {
-                Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
@@ -152,7 +181,11 @@ fn draw_system_logs(f: &mut Frame, app: &App, area: Rect) {
         Row::new(vec!["Time", "Level", "Target", "Message"])
             .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
     )
-    .block(Block::default().title(" System Logs ").borders(Borders::ALL));
+    .block(
+        Block::default()
+            .title(" System Logs ")
+            .borders(Borders::ALL),
+    );
 
     f.render_widget(table, area);
 }
@@ -167,15 +200,20 @@ fn draw_request_detail(f: &mut Frame, log: &crate::models::RequestLog, area: Rec
         .border_style(Style::default().fg(Color::Cyan));
 
     // Styles
-    let label_style    = Style::default().add_modifier(Modifier::BOLD);
-    let section_style  = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
-    let hdr_key_style  = Style::default().fg(Color::Yellow);
-    let dim_style      = Style::default().fg(Color::DarkGray);
+    let label_style = Style::default().add_modifier(Modifier::BOLD);
+    let section_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let hdr_key_style = Style::default().fg(Color::Yellow);
+    let dim_style = Style::default().fg(Color::DarkGray);
 
     let mut lines: Vec<Line> = Vec::new();
 
     // ── Request ──
-    lines.push(Line::from(Span::styled("── Request ──────────────────────────", Style::default().fg(Color::Yellow))));
+    lines.push(Line::from(Span::styled(
+        "── Request ──────────────────────────",
+        Style::default().fg(Color::Yellow),
+    )));
     lines.push(Line::from(vec![
         Span::styled("  Method: ", label_style),
         Span::raw(log.method.clone()),
@@ -197,7 +235,11 @@ fn draw_request_detail(f: &mut Frame, log: &crate::models::RequestLog, area: Rec
         Span::raw(log.port.to_string()),
         Span::raw("  "),
         Span::styled("Time: ", label_style),
-        Span::raw(log.created_at.format("%Y-%m-%d %H:%M:%S%.3f UTC").to_string()),
+        Span::raw(
+            log.created_at
+                .format("%Y-%m-%d %H:%M:%S%.3f UTC")
+                .to_string(),
+        ),
     ]));
 
     lines.push(Line::from(""));
@@ -225,7 +267,10 @@ fn draw_request_detail(f: &mut Frame, log: &crate::models::RequestLog, area: Rec
 
     // ── Response ──
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled("── Response ─────────────────────────", Style::default().fg(Color::Green))));
+    lines.push(Line::from(Span::styled(
+        "── Response ─────────────────────────",
+        Style::default().fg(Color::Green),
+    )));
     let status_style = if log.response_status < 400 {
         Style::default().fg(Color::Green)
     } else {
@@ -240,7 +285,10 @@ fn draw_request_detail(f: &mut Frame, log: &crate::models::RequestLog, area: Rec
     ]));
 
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled("  Response Headers", section_style)));
+    lines.push(Line::from(Span::styled(
+        "  Response Headers",
+        section_style,
+    )));
     if log.response_headers.is_empty() {
         lines.push(Line::from(Span::styled("    (none)", dim_style)));
     } else {

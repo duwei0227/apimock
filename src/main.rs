@@ -16,7 +16,9 @@ use clap::Parser;
 use tokio::sync::broadcast;
 
 use crate::cli::{Cli, Command};
-use crate::db::{SqliteLogStore, SqliteMockStore, SqlitePortStore, SqliteTenantStore, SqliteUserStore};
+use crate::db::{
+    SqliteLogStore, SqliteMockStore, SqlitePortStore, SqliteTenantStore, SqliteUserStore,
+};
 use crate::models::LogEvent;
 use crate::server::manager::LivePortManager;
 use crate::traits::PortManager;
@@ -146,7 +148,9 @@ async fn reconciliation_loop(state: AppState, cancel: tokio_util::sync::Cancella
             _ = cancel.cancelled() => break,
             _ = ticker.tick() => {}
         }
-        let Ok(ports) = state.port_store.list_ports().await else { continue };
+        let Ok(ports) = state.port_store.list_ports().await else {
+            continue;
+        };
         for p in ports {
             if p.enabled {
                 match p.owner_pid {
@@ -183,4 +187,3 @@ pub struct AppState {
     pub management_port: u16,
     pub jwt_secret: String,
 }
-

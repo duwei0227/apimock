@@ -36,7 +36,10 @@ pub async fn create_tenant(
     AdminUser(_): AdminUser,
     Json(body): Json<CreateTenantBody>,
 ) -> impl IntoResponse {
-    let req = CreateTenantRequest { name: body.name, slug: body.slug };
+    let req = CreateTenantRequest {
+        name: body.name,
+        slug: body.slug,
+    };
     match state.tenant_store.create_tenant(req).await {
         Ok(t) => (StatusCode::CREATED, Json(t)).into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
@@ -61,7 +64,11 @@ pub async fn update_tenant(
     Path(id): Path<i64>,
     Json(body): Json<UpdateTenantBody>,
 ) -> impl IntoResponse {
-    let req = UpdateTenantRequest { name: body.name, slug: body.slug, enabled: body.enabled };
+    let req = UpdateTenantRequest {
+        name: body.name,
+        slug: body.slug,
+        enabled: body.enabled,
+    };
     match state.tenant_store.update_tenant(id, req).await {
         Ok(t) => Json(t).into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),

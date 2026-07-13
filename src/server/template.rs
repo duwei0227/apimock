@@ -71,15 +71,24 @@ fn eval(expr: &str) -> String {
     let func = parts[0].trim();
     match func {
         "date" => {
-            let fmt = parts.get(1).map(|s| java_to_strftime(s)).unwrap_or_else(|| "%Y%m%d".into());
+            let fmt = parts
+                .get(1)
+                .map(|s| java_to_strftime(s))
+                .unwrap_or_else(|| "%Y%m%d".into());
             Local::now().format(&fmt).to_string()
         }
         "time" => {
-            let fmt = parts.get(1).map(|s| java_to_strftime(s)).unwrap_or_else(|| "%H%M%S".into());
+            let fmt = parts
+                .get(1)
+                .map(|s| java_to_strftime(s))
+                .unwrap_or_else(|| "%H%M%S".into());
             Local::now().format(&fmt).to_string()
         }
         "datetime" => {
-            let fmt = parts.get(1).map(|s| java_to_strftime(s)).unwrap_or_else(|| "%Y%m%d%H%M%S".into());
+            let fmt = parts
+                .get(1)
+                .map(|s| java_to_strftime(s))
+                .unwrap_or_else(|| "%Y%m%d%H%M%S".into());
             Local::now().format(&fmt).to_string()
         }
         "randomInt" => {
@@ -91,21 +100,32 @@ fn eval(expr: &str) -> String {
             let min: f64 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0.0);
             let max: f64 = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(1.0);
             let dec: usize = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(2);
-            format!("{:.prec$}", rand::thread_rng().gen_range(min..max), prec = dec)
+            format!(
+                "{:.prec$}",
+                rand::thread_rng().gen_range(min..max),
+                prec = dec
+            )
         }
         "randomString" => {
             let n: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(10);
             let charset = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
             let mut rng = rand::thread_rng();
-            (0..n).map(|_| charset[rng.gen_range(0..charset.len())] as char).collect()
+            (0..n)
+                .map(|_| charset[rng.gen_range(0..charset.len())] as char)
+                .collect()
         }
         "randomChinese" => {
             let n: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(15);
             // Deduplicate at call time (cheap for this pool size).
             let mut seen = std::collections::HashSet::new();
-            let chars: Vec<char> = COMMON_CHINESE_CHARS.chars().filter(|c| seen.insert(*c)).collect();
+            let chars: Vec<char> = COMMON_CHINESE_CHARS
+                .chars()
+                .filter(|c| seen.insert(*c))
+                .collect();
             let mut rng = rand::thread_rng();
-            (0..n).map(|_| chars[rng.gen_range(0..chars.len())]).collect()
+            (0..n)
+                .map(|_| chars[rng.gen_range(0..chars.len())])
+                .collect()
         }
         "uuid" => Uuid::new_v4().to_string(),
         _ => format!("{{{{{}}}}}", expr), // unknown → keep as-is

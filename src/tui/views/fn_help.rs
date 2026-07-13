@@ -28,20 +28,38 @@ pub fn draw(f: &mut Frame, _app: &App) {
 
     let hint = Paragraph::new(Line::from(vec![
         Span::styled("Use ", Style::default().fg(Color::DarkGray)),
-        Span::styled("{{function}}", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "{{function}}",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" or ", Style::default().fg(Color::DarkGray)),
-        Span::styled("{{function:arg}}", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Span::styled(" in Response Body. Templates are evaluated at request time.", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            "{{function:arg}}",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            " in Response Body. Templates are evaluated at request time.",
+            Style::default().fg(Color::DarkGray),
+        ),
     ]))
     .alignment(Alignment::Center);
     f.render_widget(hint, chunks[0]);
 
     let header = Row::new(vec![
-        Cell::from("Function").style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
-        Cell::from("Syntax").style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
-        Cell::from("Default").style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
-        Cell::from("Description").style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
-        Cell::from("Example output").style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+        Cell::from("Function")
+            .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+        Cell::from("Syntax")
+            .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+        Cell::from("Default")
+            .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+        Cell::from("Description")
+            .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+        Cell::from("Example output")
+            .style(Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
     ]);
 
     let rows: Vec<Row> = FUNCTIONS
@@ -54,11 +72,19 @@ pub fn draw(f: &mut Frame, _app: &App) {
                 Style::default().bg(Color::Rgb(30, 30, 30))
             };
             Row::new(vec![
-                Cell::from(Span::styled(f.name, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled(
+                    f.name,
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )),
                 Cell::from(Span::styled(f.syntax, Style::default().fg(Color::Yellow))),
                 Cell::from(f.default_args),
                 Cell::from(f.description),
-                Cell::from(Span::styled(f.example_output, Style::default().fg(Color::Green))),
+                Cell::from(Span::styled(
+                    f.example_output,
+                    Style::default().fg(Color::Green),
+                )),
             ])
             .style(style)
         })

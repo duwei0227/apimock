@@ -11,8 +11,7 @@ use crate::models::LogEvent;
 use crate::traits::LogStore;
 
 pub fn init(log_store: Arc<dyn LogStore>, log_tx: broadcast::Sender<LogEvent>) {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(true)

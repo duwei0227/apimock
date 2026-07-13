@@ -148,10 +148,7 @@ impl TenantStore for SqliteTenantStore {
                     "UPDATE request_logs SET tenant_id = NULL WHERE tenant_id = ?1",
                     rusqlite::params![id],
                 )?;
-                conn.execute(
-                    "DELETE FROM tenants WHERE id = ?1",
-                    rusqlite::params![id],
-                )?;
+                conn.execute("DELETE FROM tenants WHERE id = ?1", rusqlite::params![id])?;
                 Ok(())
             })
             .await

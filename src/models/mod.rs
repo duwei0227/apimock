@@ -69,14 +69,14 @@ pub enum HttpMethod {
 impl std::fmt::Display for HttpMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            HttpMethod::GET     => "GET",
-            HttpMethod::POST    => "POST",
-            HttpMethod::PUT     => "PUT",
-            HttpMethod::PATCH   => "PATCH",
-            HttpMethod::DELETE  => "DELETE",
-            HttpMethod::HEAD    => "HEAD",
+            HttpMethod::GET => "GET",
+            HttpMethod::POST => "POST",
+            HttpMethod::PUT => "PUT",
+            HttpMethod::PATCH => "PATCH",
+            HttpMethod::DELETE => "DELETE",
+            HttpMethod::HEAD => "HEAD",
             HttpMethod::OPTIONS => "OPTIONS",
-            HttpMethod::ANY     => "ANY",
+            HttpMethod::ANY => "ANY",
         };
         write!(f, "{}", s)
     }
@@ -86,15 +86,15 @@ impl std::str::FromStr for HttpMethod {
     type Err = String;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "GET"     => Ok(HttpMethod::GET),
-            "POST"    => Ok(HttpMethod::POST),
-            "PUT"     => Ok(HttpMethod::PUT),
-            "PATCH"   => Ok(HttpMethod::PATCH),
-            "DELETE"  => Ok(HttpMethod::DELETE),
-            "HEAD"    => Ok(HttpMethod::HEAD),
+            "GET" => Ok(HttpMethod::GET),
+            "POST" => Ok(HttpMethod::POST),
+            "PUT" => Ok(HttpMethod::PUT),
+            "PATCH" => Ok(HttpMethod::PATCH),
+            "DELETE" => Ok(HttpMethod::DELETE),
+            "HEAD" => Ok(HttpMethod::HEAD),
             "OPTIONS" => Ok(HttpMethod::OPTIONS),
-            "ANY"     => Ok(HttpMethod::ANY),
-            other     => Err(format!("unknown method: {}", other)),
+            "ANY" => Ok(HttpMethod::ANY),
+            other => Err(format!("unknown method: {}", other)),
         }
     }
 }

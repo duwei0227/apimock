@@ -60,11 +60,15 @@ fn row_to_mock(row: &rusqlite::Row<'_>) -> rusqlite::Result<MockApi> {
         enabled: row.get::<_, i64>(13).map(|v| v != 0).unwrap_or(true),
         pagination_enabled: row.get::<_, i64>(14).map(|v| v != 0).unwrap_or(false),
         pagination_page_size: row.get::<_, i64>(15).unwrap_or(10) as u32,
-        request_params: row.get::<_, String>(16).ok()
+        request_params: row
+            .get::<_, String>(16)
+            .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default(),
         pagination_page_param: row.get::<_, String>(17).unwrap_or_else(|_| "page".into()),
-        pagination_size_param: row.get::<_, String>(18).unwrap_or_else(|_| "page_size".into()),
+        pagination_size_param: row
+            .get::<_, String>(18)
+            .unwrap_or_else(|_| "page_size".into()),
         pagination_data_field: row.get::<_, String>(19).unwrap_or_default(),
         pagination_total_field: row.get::<_, String>(20).unwrap_or_default(),
         tenant_id: row.get::<_, i64>(21).unwrap_or(0),
@@ -73,8 +77,7 @@ fn row_to_mock(row: &rusqlite::Row<'_>) -> rusqlite::Result<MockApi> {
     })
 }
 
-const SELECT_COLS: &str =
-    "id, port_id, name, description, method, path, request_schema, \
+const SELECT_COLS: &str = "id, port_id, name, description, method, path, request_schema, \
      response_status, response_headers, response_body, response_delay_ms, \
      created_at, updated_at, enabled, \
      pagination_enabled, pagination_page_size, request_params, \
@@ -83,22 +86,32 @@ const SELECT_COLS: &str =
 
 #[async_trait]
 impl MockStore for SqliteMockStore {
-    async fn list_mocks(&self, port_id: Option<i64>, tenant_id: Option<i64>) -> Result<Vec<MockApi>> {
+    async fn list_mocks(
+        &self,
+        port_id: Option<i64>,
+        tenant_id: Option<i64>,
+    ) -> Result<Vec<MockApi>> {
         self.conn
             .call(move |conn| {
                 let mut wheres: Vec<String> = Vec::new();
-                if port_id.is_some() { wheres.push(format!("port_id = ?{}", wheres.len() + 1)); }
-                if tenant_id.is_some() { wheres.push(format!("tenant_id = ?{}", wheres.len() + 1)); }
+                if port_id.is_some() {
+                    wheres.push(format!("port_id = ?{}", wheres.len() + 1));
+                }
+                if tenant_id.is_some() {
+                    wheres.push(format!("tenant_id = ?{}", wheres.len() + 1));
+                }
                 let mut sql = format!("SELECT {} FROM mock_apis", SELECT_COLS);
-                if !wheres.is_empty() { sql.push_str(&format!(" WHERE {}", wheres.join(" AND "))); }
+                if !wheres.is_empty() {
+                    sql.push_str(&format!(" WHERE {}", wheres.join(" AND ")));
+                }
                 sql.push_str(" ORDER BY id");
 
                 let mut stmt = conn.prepare(&sql)?;
                 let items = match (port_id, tenant_id) {
                     (Some(p), Some(t)) => stmt.query_map(rusqlite::params![p, t], row_to_mock)?,
-                    (Some(p), None)    => stmt.query_map(rusqlite::params![p], row_to_mock)?,
-                    (None, Some(t))    => stmt.query_map(rusqlite::params![t], row_to_mock)?,
-                    (None, None)       => stmt.query_map([], row_to_mock)?,
+                    (Some(p), None) => stmt.query_map(rusqlite::params![p], row_to_mock)?,
+                    (None, Some(t)) => stmt.query_map(rusqlite::params![t], row_to_mock)?,
+                    (None, None) => stmt.query_map([], row_to_mock)?,
                 }
                 .collect::<rusqlite::Result<Vec<_>>>()?;
                 Ok(items)
@@ -208,30 +221,59 @@ impl MockStore for SqliteMockStore {
                     }};
                 }
 
-                if let Some(v) = req.name           { push!("name", v); }
-                if let Some(v) = req.description    { push!("description", v); }
-                if let Some(v) = req.method         { push!("method", v.to_string()); }
-                if let Some(v) = req.path           { push!("path", v); }
-                if let Some(v) = req.response_status { push!("response_status", v as i64); }
-                if let Some(v) = req.response_body  { push!("response_body", v); }
-                if let Some(v) = req.response_delay_ms { push!("response_delay_ms", v as i64); }
-                if let Some(v) = req.enabled        { push!("enabled", v as i64); }
-                if let Some(v) = req.pagination_enabled      { push!("pagination_enabled", v as i64); }
+                if let Some(v) = req.name {
+                    push!("name", v);
+                }
+                if let Some(v) = req.description {
+                    push!("description", v);
+                }
+                if let Some(v) = req.method {
+                    push!("method", v.to_string());
+                }
+                if let Some(v) = req.path {
+                    push!("path", v);
+                }
+                if let Some(v) = req.response_status {
+                    push!("response_status", v as i64);
+                }
+                if let Some(v) = req.response_body {
+                    push!("response_body", v);
+                }
+                if let Some(v) = req.response_delay_ms {
+                    push!("response_delay_ms", v as i64);
+                }
+                if let Some(v) = req.enabled {
+                    push!("enabled", v as i64);
+                }
+                if let Some(v) = req.pagination_enabled {
+                    push!("pagination_enabled", v as i64);
+                }
                 if let Some(v) = req.request_params {
                     let j = serde_json::to_string(&v).unwrap_or_else(|_| "{}".into());
                     push!("request_params", j);
                 }
-                if let Some(v) = req.pagination_page_size    { push!("pagination_page_size", v as i64); }
-                if let Some(v) = req.pagination_page_param   { push!("pagination_page_param", v); }
-                if let Some(v) = req.pagination_size_param   { push!("pagination_size_param", v); }
-                if let Some(v) = req.pagination_data_field   { push!("pagination_data_field", v); }
-                if let Some(v) = req.pagination_total_field  { push!("pagination_total_field", v); }
+                if let Some(v) = req.pagination_page_size {
+                    push!("pagination_page_size", v as i64);
+                }
+                if let Some(v) = req.pagination_page_param {
+                    push!("pagination_page_param", v);
+                }
+                if let Some(v) = req.pagination_size_param {
+                    push!("pagination_size_param", v);
+                }
+                if let Some(v) = req.pagination_data_field {
+                    push!("pagination_data_field", v);
+                }
+                if let Some(v) = req.pagination_total_field {
+                    push!("pagination_total_field", v);
+                }
                 if let Some(v) = req.response_headers {
                     let j = serde_json::to_string(&v).unwrap_or_else(|_| "{}".into());
                     push!("response_headers", j);
                 }
                 if let Some(v) = req.request_schema {
-                    let j: Option<String> = v.as_ref().and_then(|val| serde_json::to_string(val).ok());
+                    let j: Option<String> =
+                        v.as_ref().and_then(|val| serde_json::to_string(val).ok());
                     push!("request_schema", j);
                 }
 
@@ -249,7 +291,11 @@ impl MockStore for SqliteMockStore {
                 let idx = params.len() + 1;
                 params.push(Box::new(id));
 
-                let sql = format!("UPDATE mock_apis SET {} WHERE id = ?{}", sets.join(", "), idx);
+                let sql = format!(
+                    "UPDATE mock_apis SET {} WHERE id = ?{}",
+                    sets.join(", "),
+                    idx
+                );
                 let refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
                 conn.execute(&sql, refs.as_slice())?;
 

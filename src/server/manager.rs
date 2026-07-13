@@ -46,7 +46,10 @@ impl LivePortManager {
             .await?
             .ok_or_else(|| AppError::NotFound(format!("port id {}", port_id)))?;
 
-        let mocks = self.mock_store.list_mocks_for_port_all_tenants(port_id).await?;
+        let mocks = self
+            .mock_store
+            .list_mocks_for_port_all_tenants(port_id)
+            .await?;
 
         let state = MockHandlerState {
             port: config.port,
@@ -59,10 +62,9 @@ impl LivePortManager {
         let token_clone = token.clone();
         let port = config.port;
 
-        let listener =
-            tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
-                .await
-                .map_err(|e| AppError::Io(e))?;
+        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
+            .await
+            .map_err(|e| AppError::Io(e))?;
 
         let app = axum::Router::new()
             .fallback(mock_fallback)
@@ -91,8 +93,13 @@ impl PortManager for LivePortManager {
         let our_pid = std::process::id();
         handles.insert(port_id, handle);
         drop(handles);
-        let _ = self.port_store.set_port_running(port_id, true, Some(our_pid)).await;
-        let _ = self.log_tx.send(LogEvent::StateChanged { resource: StateResource::Ports });
+        let _ = self
+            .port_store
+            .set_port_running(port_id, true, Some(our_pid))
+            .await;
+        let _ = self.log_tx.send(LogEvent::StateChanged {
+            resource: StateResource::Ports,
+        });
         Ok(())
     }
 
@@ -107,8 +114,13 @@ impl PortManager for LivePortManager {
             // Keep our PID so the reconciliation loop treats this as "intentionally stopped"
             // and doesn't immediately restart. Stale-PID detection handles cleanup on restart.
             let our_pid = std::process::id();
-            let _ = self.port_store.set_port_running(port_id, false, Some(our_pid)).await;
-            let _ = self.log_tx.send(LogEvent::StateChanged { resource: StateResource::Ports });
+            let _ = self
+                .port_store
+                .set_port_running(port_id, false, Some(our_pid))
+                .await;
+            let _ = self.log_tx.send(LogEvent::StateChanged {
+                resource: StateResource::Ports,
+            });
         }
         Ok(())
     }
@@ -122,18 +134,26 @@ impl PortManager for LivePortManager {
             token.cancel();
             join.await.ok();
             let our_pid = std::process::id();
-            let _ = self.port_store.set_port_running(port_id, false, Some(our_pid)).await;
+            let _ = self
+                .port_store
+                .set_port_running(port_id, false, Some(our_pid))
+                .await;
         }
         // Re-check enabled state before restarting.
         let config = self.port_store.get_port(port_id).await?;
         if config.map(|c| c.enabled).unwrap_or(false) {
             let handle = self.spawn_server(port_id).await?;
             let our_pid = std::process::id();
-            let _ = self.port_store.set_port_running(port_id, true, Some(our_pid)).await;
+            let _ = self
+                .port_store
+                .set_port_running(port_id, true, Some(our_pid))
+                .await;
             let mut handles = self.handles.lock().await;
             handles.insert(port_id, handle);
         }
-        let _ = self.log_tx.send(LogEvent::StateChanged { resource: StateResource::Ports });
+        let _ = self.log_tx.send(LogEvent::StateChanged {
+            resource: StateResource::Ports,
+        });
         Ok(())
     }
 

@@ -34,7 +34,11 @@ pub async fn list_request_logs(
     AuthUser(claims): AuthUser,
     Query(q): Query<RequestLogQuery>,
 ) -> impl IntoResponse {
-    let tenant_id = if claims.is_admin { None } else { claims.current_tenant_id };
+    let tenant_id = if claims.is_admin {
+        None
+    } else {
+        claims.current_tenant_id
+    };
     let query = LogQuery {
         port: q.port,
         mock_api_id: q.mock_api_id,
@@ -64,7 +68,10 @@ pub async fn get_request_log(
     }
 }
 
-pub async fn clear_request_logs(State(state): State<AppState>, AuthUser(_): AuthUser) -> impl IntoResponse {
+pub async fn clear_request_logs(
+    State(state): State<AppState>,
+    AuthUser(_): AuthUser,
+) -> impl IntoResponse {
     match state.log_store.clear_request_logs().await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -93,7 +100,10 @@ pub async fn list_system_logs(
     }
 }
 
-pub async fn clear_system_logs(State(state): State<AppState>, AuthUser(_): AuthUser) -> impl IntoResponse {
+pub async fn clear_system_logs(
+    State(state): State<AppState>,
+    AuthUser(_): AuthUser,
+) -> impl IntoResponse {
     match state.log_store.clear_system_logs().await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
